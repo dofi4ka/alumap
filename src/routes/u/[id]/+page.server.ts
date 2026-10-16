@@ -234,7 +234,7 @@ export const actions: Actions = {
 		if (me.nanoId !== params.id) error(403, 'Forbidden');
 		const bot = getBotUsername();
 		if (!bot) return fail(400, { error: 'Telegram bot is not available right now' });
-		redirect(303, `https://t.me/${bot}?start=${createLinkToken(me.id)}`);
+		redirect(303, `https://t.me/${bot}?start=${createLinkToken(me.id)}`, { external: ['https://t.me'] });
 	},
 
 	changePassword: async ({ request, locals, params }) => {
