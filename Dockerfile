@@ -4,14 +4,6 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile
 
-# Drizzle Studio for the production database (the "studio" service in docker-compose.yml)
-FROM deps AS studio
-COPY drizzle.config.ts ./
-COPY src/lib/server/db/schema.ts ./src/lib/server/db/schema.ts
-ENV DATABASE_PATH=/data/db.sqlite
-EXPOSE 4983
-CMD ["pnpm", "drizzle-kit", "studio", "--host", "0.0.0.0", "--port", "4983"]
-
 FROM deps AS build
 COPY . .
 RUN pnpm build && pnpm prune --prod

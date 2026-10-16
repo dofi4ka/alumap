@@ -10,16 +10,14 @@ services:
     volumes:
       - ./data:/data
 
-  # Drizzle Studio for the database. It has no authentication, so it listens on the server's localhost only.
-  # Open it through an ssh tunnel:  ssh -L 4983:localhost:4983 <server>  ->  https://local.drizzle.studio
+  # Web UI for the database: http://<server>:8080
   # Writes from here bypass the app: e.g. deleting user_badges rows lets automatic badges come back.
-  studio:
-    build:
-      context: .
-      target: studio
+  db-admin:
+    image: ghcr.io/coleifer/sqlite-web:latest
     restart: unless-stopped
+    command: sqlite_web --host 0.0.0.0 --port 8080 --no-browser /data/db.sqlite
     ports:
-      - '127.0.0.1:4983:4983'
+      - '8080:8080'
     volumes:
       - ./data:/data
     depends_on:
