@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { page } from '$app/state';
 	import Avatar from '#lib/components/Avatar.svelte';
 	import BadgeIcon from '#lib/components/BadgeIcon.svelte';
 	import BadgeForm from '#lib/components/BadgeForm.svelte';
@@ -11,6 +12,15 @@
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+
+	const tabs = $derived([
+		{ id: 'users', label: 'New users to review', count: data.pendingUsers.length, review: true },
+		{ id: 'events', label: 'Events to review', count: data.pendingEvents.length, review: true },
+		{ id: 'projects', label: 'Projects to review', count: data.pendingProjects.length, review: true },
+		{ id: 'all-users', label: 'Users list', count: data.users.length, review: false },
+		{ id: 'badges', label: 'Badges', count: data.badges.length, review: false }
+	]);
+	const tab = $derived(page.url.searchParams.get('tab') ?? 'users');
 	let filter = $state('');
 	/** badge form popup: 'new', a badge id, or closed */
 	let editingBadge = $state<'new' | number | null>(null);
@@ -31,8 +41,26 @@
 
 <h1 class="mb-5 text-2xl font-bold tracking-tight">Admin</h1>
 
+<nav class="-mx-4 mb-6 flex gap-1 overflow-x-auto px-4 [scrollbar-width:none]">
+	{#each tabs as t (t.id)}
+		<a
+			href="?tab={t.id}"
+			data-sveltekit-noscroll
+			data-sveltekit-replacestate
+			class="flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium {tab === t.id
+				? 'bg-brand-50 text-brand-700'
+				: 'text-zinc-600 hover:bg-zinc-100'}"
+		>
+			{t.label}
+			{#if t.count !== undefined}
+				<span class="rounded-full px-1.5 text-xs {t.count && t.review ? 'bg-brand-500 text-white' : 'bg-zinc-100 text-zinc-500'}">{t.count}</span>
+			{/if}
+		</a>
+	{/each}
+</nav>
+
+{#if tab === 'users'}
 <section class="mb-8">
-	<h2 class="mb-3 font-semibold">Waiting for approval <span class="text-zinc-400">{data.pendingUsers.length}</span></h2>
 	{#if data.pendingUsers.length === 0}
 		<p class="card text-sm text-zinc-500">Nobody is waiting 🎉</p>
 	{/if}
@@ -58,9 +86,10 @@
 		{/each}
 	</div>
 </section>
+{/if}
 
+{#if tab === 'events'}
 <section class="mb-8">
-	<h2 class="mb-3 font-semibold">Events to review <span class="text-zinc-400">{data.pendingEvents.length}</span></h2>
 	{#if data.pendingEvents.length === 0}
 		<p class="card text-sm text-zinc-500">No events to review</p>
 	{/if}
@@ -86,9 +115,10 @@
 		{/each}
 	</div>
 </section>
+{/if}
 
+{#if tab === 'projects'}
 <section class="mb-8">
-	<h2 class="mb-3 font-semibold">Projects to review <span class="text-zinc-400">{data.pendingProjects.length}</span></h2>
 	{#if data.pendingProjects.length === 0}
 		<p class="card text-sm text-zinc-500">No projects to review</p>
 	{/if}
@@ -112,7 +142,9 @@
 		{/each}
 	</div>
 </section>
+{/if}
 
+{#if tab === 'badges'}
 <section class="mb-8">
 	<div class="mb-3 flex items-center justify-between">
 		<h2 class="font-semibold">Badges <span class="text-zinc-400">{data.badges.length}</span></h2>
@@ -136,6 +168,7 @@
 	</div>
 	<p class="mt-2 text-xs text-zinc-400">Click a badge to edit it. Give or take away badges on a user's profile.</p>
 </section>
+{/if}
 
 <Modal
 	bind:open={() => editingBadge !== null, (v) => !v && (editingBadge = null)}
@@ -152,6 +185,7 @@
 	/>
 {/if}
 
+{#if tab === 'all-users'}
 <section>
 	<div class="mb-3 flex items-center justify-between gap-3">
 		<h2 class="font-semibold">Users <span class="text-zinc-400">{data.users.length}</span></h2>
@@ -181,3 +215,4 @@
 		{/each}
 	</div>
 </section>
+{/if}
