@@ -10,11 +10,12 @@ const g = globalThis as { __alumapBot?: Bot };
 
 export const getBotUsername = () => (g.__alumapBot?.isInited() ? g.__alumapBot.botInfo.username : '');
 
-const greeting = `👋 Hi! This is <b>Alumap</b> — a map of Innopolis University alumni and their friends.
+// plain text, so the user's name needs no escaping
+const greeting = (name: string) => `👋 Hello, ${name}
+🎓 Welcome to IU Alumap — we're glad to have you here!
+🔔 You will receive your app notifications through this bot
 
-Find classmates around the world, see where people live and join alumni events.
-
-Developer: @dofi4ka`;
+📞 Found a bug? Or have a suggestion? Contact @dofi4ka`;
 
 export function startBot() {
 	if (!env.botToken) {
@@ -40,7 +41,7 @@ export function startBot() {
 			await ctx.reply(message, { reply_markup: openKeyboard() });
 			return;
 		}
-		await ctx.reply(greeting, { parse_mode: 'HTML', reply_markup: openKeyboard() });
+		await ctx.reply(greeting(ctx.from?.first_name ?? 'there'), { reply_markup: openKeyboard() });
 	});
 
 	bot.catch((err) => console.error('[telegram]', err));
