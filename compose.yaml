@@ -1,0 +1,26 @@
+services:
+  alumap:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data
+
+  # Drizzle Studio for the database. It has no authentication, so it listens on the server's localhost only.
+  # Open it through an ssh tunnel:  ssh -L 4983:localhost:4983 <server>  ->  https://local.drizzle.studio
+  # Writes from here bypass the app: e.g. deleting user_badges rows lets automatic badges come back.
+  studio:
+    build:
+      context: .
+      target: studio
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:4983:4983'
+    volumes:
+      - ./data:/data
+    depends_on:
+      - alumap
