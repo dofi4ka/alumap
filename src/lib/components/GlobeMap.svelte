@@ -2,6 +2,11 @@
 	import { onMount } from 'svelte';
 	import * as maplibregl from 'maplibre-gl';
 	import type { GeoJSONSource, MapGeoJSONFeature } from 'maplibre-gl';
+	// maplibre finds its worker next to its own file, which breaks after bundling:
+	// `?url` makes vite emit the worker and gives its real address
+	import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
+
+	maplibregl.setWorkerUrl(workerUrl);
 	import 'maplibre-gl/dist/maplibre-gl.css';
 	import type { MapFeatureProps } from '../../routes/api/map.geojson/+server.ts';
 	import { createSpaceLayer } from '#lib/map/space-layer.ts';
