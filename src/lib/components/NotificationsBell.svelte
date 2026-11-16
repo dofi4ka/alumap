@@ -7,6 +7,7 @@
 		id: number;
 		message: string;
 		actorNanoId: string | null;
+		eventNanoId: string | null;
 		nearCityName: string | null;
 		createdAt: number;
 		wasUnread: boolean;
@@ -97,10 +98,10 @@
 							{#if n.nearCityName}· near {n.nearCityName}{/if}
 						</p>
 					</div>
-					{#if n.actorNanoId}
+					{#if n.actorNanoId || n.eventNanoId}
 						<a
 							class="shrink-0 self-center text-sm font-medium text-brand-700 hover:underline"
-							href="/u/{n.actorNanoId}"
+							href={n.actorNanoId ? `/u/${n.actorNanoId}` : `/events/${n.eventNanoId}`}
 							onclick={() => (open = false)}
 						>
 							View

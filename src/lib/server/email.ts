@@ -42,10 +42,16 @@ export async function sendVerificationCode(to: string, code: string, purpose: Co
 	);
 }
 
-export async function sendNotificationEmail(to: string, message: string, link?: string) {
+export async function sendNotificationEmail(
+	to: string,
+	subject: string,
+	message: string,
+	link?: string,
+	linkLabel = 'Open'
+) {
 	await sendMail(
 		to,
-		'Alumap: an alum is nearby',
-		`${message}\n${link ? `\nOpen their profile: ${link}\n` : ''}\nYou receive this because you follow a city nearby in Alumap notifications.`
+		subject,
+		`${message}\n${link ? `\n${linkLabel}: ${link}\n` : ''}\nYou receive this because you follow a city in Alumap notifications.`
 	);
 }

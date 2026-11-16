@@ -347,7 +347,9 @@ export const notifications = pgTable(
 			.references(() => users.id, { onDelete: 'cascade' }),
 		/** Public id of the alum who moved, so the notification can link to their profile. */
 		actorNanoId: text(),
-		kind: text({ enum: ['appeared', 'moved', 'temporary'] }).notNull(),
+		/** Public id of a newly published event, so the notification can link to it. */
+		eventNanoId: text(),
+		kind: text({ enum: ['appeared', 'moved', 'temporary', 'event'] }).notNull(),
 		message: text().notNull(),
 		cityName: text().notNull(),
 		cityLat: doublePrecision().notNull(),

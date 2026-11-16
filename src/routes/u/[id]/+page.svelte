@@ -506,12 +506,14 @@
 								{#if city.enabled}<Bell size={17} />{:else}<BellOff size={17} />{/if}
 							</button>
 						</form>
-						<form method="POST" action="?/removeFollowCity" use:enhance={submitThen()} class="contents">
-							<input type="hidden" name="id" value={city.id} />
-							<button class="btn-ghost shrink-0 text-zinc-400" aria-label="Remove {city.name}">
-								<X size={16} />
-							</button>
-						</form>
+						{#if city.source === 'manual'}
+							<form method="POST" action="?/removeFollowCity" use:enhance={submitThen()} class="contents">
+								<input type="hidden" name="id" value={city.id} />
+								<button class="btn-ghost shrink-0 text-zinc-400" aria-label="Remove {city.name}">
+									<X size={16} />
+								</button>
+							</form>
+						{/if}
 					</li>
 				{:else}
 					<li class="rounded-xl border border-dashed border-zinc-200 px-3 py-4 text-sm text-zinc-400">

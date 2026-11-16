@@ -5,6 +5,7 @@ import { DATETIME, int, location, str } from './forms.ts';
 import { publicId } from './ids.ts';
 import { deleteImage, saveImage } from './images.ts';
 import { richTextFromForm } from './rich-text.ts';
+import { notifyEventPublished } from './notifications.ts';
 
 /** Deletes the event (attendees cascade) and its picture. */
 export async function deleteEvent(event: Event) {
@@ -128,6 +129,7 @@ export async function saveEvent(
 			})
 			.returning();
 		await setCoOrganizers(created, coOrganizers);
+		if (created.status === 'published') await notifyEventPublished(created);
 		return created;
 	}
 

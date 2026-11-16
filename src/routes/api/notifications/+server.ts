@@ -16,6 +16,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			id: n.id,
 			message: n.message,
 			actorNanoId: n.actorNanoId,
+			eventNanoId: n.eventNanoId,
 			nearCityName: n.nearCityName,
 			createdAt: n.createdAt.getTime(),
 			wasUnread: !n.readAt

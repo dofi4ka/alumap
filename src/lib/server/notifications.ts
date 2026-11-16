@@ -1,5 +1,13 @@
 import { and, eq, ne, sql } from 'drizzle-orm';
-import { db, followedCities, notifications, users, type User } from './db/index.ts';
+import { formatEventDate } from '#lib/format.ts';
+import {
+	db,
+	followedCities,
+	notifications,
+	users,
+	type Event,
+	type User
+} from './db/index.ts';
 import { env } from './env.ts';
 import { sendNotificationEmail } from './email.ts';
 import {
@@ -13,6 +21,7 @@ import {
 import { sendTelegramMessage } from './telegram-send.ts';
 
 export type MovementKind = 'appeared' | 'moved' | 'temporary';
+export type NotificationKind = MovementKind | 'event';
 
 const cityLabel = (city: City, near: string | null) =>
 	near ? `${city.name} (near ${near})` : city.name;
@@ -34,17 +43,16 @@ export const movementMessage = (
 	return text;
 };
 
-const profileLink = (nanoId: string) =>
-	env.miniappUrl ? `${env.miniappUrl.replace(/\/$/, '')}/u/${nanoId}` : `/u/${nanoId}`;
+const appLink = (path: string) =>
+	env.miniappUrl ? `${env.miniappUrl.replace(/\/$/, '')}${path}` : path;
+
+type Follower = { email: string; telegramId: number | null; near: string | null; distance: number };
 
 /**
- * Tells everyone who follows the city (or a city within 150 km) that an alumnus is now there.
- * Each follower gets at most one notification, the closest followed city is used for "(near …)".
- * Email and Telegram delivery failures never break the request that caused the movement.
+ * One notification per follower, using the closest followed city within 150 km.
+ * Followers' expired temporary follows are ignored, as are banned/unapproved accounts.
  */
-export async function notifyMovement(actor: User, city: EffectiveLocation, kind: MovementKind) {
-	if (!actor.isApproved || actor.isBanned) return;
-
+async function nearbyFollowers(city: City, excludeUserId?: number) {
 	const rows = await db
 		.select({
 			userId: users.id,
@@ -61,13 +69,12 @@ export async function notifyMovement(actor: User, city: EffectiveLocation, kind:
 				eq(followedCities.enabled, true),
 				eq(users.isApproved, true),
 				eq(users.isBanned, false),
-				ne(users.id, actor.id),
+				excludeUserId === undefined ? undefined : ne(users.id, excludeUserId),
 				// an expired temporary location should not keep its auto-followed city alive
 				sql`(${followedCities.source} <> 'temporary' or ${users.temporaryLocationExpiresAt} > now())`
 			)
 		);
 
-	type Follower = { email: string; telegramId: number | null; near: string; distance: number };
 	const followers = new Map<number, Follower>();
 	for (const row of rows) {
 		const followed = { name: row.cityName, lat: row.lat, lng: row.lng };
@@ -80,52 +87,55 @@ export async function notifyMovement(actor: User, city: EffectiveLocation, kind:
 		followers.set(row.userId, {
 			email: row.email,
 			telegramId: row.telegramId,
-			near: direct ? '' : row.cityName,
+			near: direct ? null : row.cityName,
 			distance
 		});
 	}
+	return followers;
+}
 
-	if (followers.size === 0) return;
+type Outgoing = {
+	userId: number;
+	email: string;
+	telegramId: number | null;
+	message: string;
+	near: string | null;
+	kind: NotificationKind;
+	actorNanoId: string | null;
+	eventNanoId: string | null;
+	city: City;
+	link: string;
+	linkLabel: string;
+	emailSubject: string;
+};
 
-	const created: {
-		userId: number;
-		message: string;
-		near: string | null;
-		email: string;
-		telegramId: number | null;
-	}[] = [];
-	for (const [userId, follower] of followers) {
-		const near = follower.near || null;
-		created.push({
-			userId,
-			message: movementMessage(actor, kind, city, near),
-			near,
-			email: follower.email,
-			telegramId: follower.telegramId
-		});
-	}
+async function saveAndDeliver(outgoing: Outgoing[]) {
+	if (outgoing.length === 0) return;
 
 	await db.insert(notifications).values(
-		created.map((n) => ({
+		outgoing.map((n) => ({
 			userId: n.userId,
-			actorNanoId: actor.nanoId,
-			kind,
+			actorNanoId: n.actorNanoId,
+			eventNanoId: n.eventNanoId,
+			kind: n.kind,
 			message: n.message,
-			cityName: city.name,
-			cityLat: city.lat,
-			cityLng: city.lng,
+			cityName: n.city.name,
+			cityLat: n.city.lat,
+			cityLng: n.city.lng,
 			nearCityName: n.near
 		}))
 	);
 
-	const link = profileLink(actor.nanoId);
+	// Email and Telegram failures never break the request that caused the notification.
 	void Promise.allSettled(
-		created.flatMap((n) => {
-			const deliveries = [sendNotificationEmail(n.email, n.message, link)];
+		outgoing.flatMap((n) => {
+			const deliveries = [
+				sendNotificationEmail(n.email, n.emailSubject, n.message, n.link, n.linkLabel)
+			];
 			if (n.telegramId !== null)
 				deliveries.push(
 					(async () => {
-						const text = `🔔 ${n.message}\n\nOpen profile: ${link}`;
+						const text = `🔔 ${n.message}\n\n${n.linkLabel}: ${n.link}`;
 						const ok = await sendTelegramMessage(n.telegramId!, text);
 						if (!ok) throw new Error('telegram delivery failed');
 					})()
@@ -136,6 +146,59 @@ export async function notifyMovement(actor: User, city: EffectiveLocation, kind:
 		for (const result of results)
 			if (result.status === 'rejected') console.error('[notifications]', result.reason);
 	});
+}
+
+/**
+ * Tells everyone who follows the city (or a city within 150 km) that an alumnus is now there.
+ */
+export async function notifyMovement(actor: User, city: EffectiveLocation, kind: MovementKind) {
+	if (!actor.isApproved || actor.isBanned) return;
+	const followers = await nearbyFollowers(city, actor.id);
+	if (followers.size === 0) return;
+
+	const link = appLink(`/u/${actor.nanoId}`);
+	await saveAndDeliver(
+		[...followers].map(([userId, follower]) => ({
+			userId,
+			email: follower.email,
+			telegramId: follower.telegramId,
+			message: movementMessage(actor, kind, city, follower.near),
+			near: follower.near,
+			kind,
+			actorNanoId: actor.nanoId,
+			eventNanoId: null,
+			city,
+			link,
+			linkLabel: 'Open their profile',
+			emailSubject: 'Alumap: an alum is nearby'
+		}))
+	);
+}
+
+/** Tells followers of the event city about a newly published event. */
+export async function notifyEventPublished(event: Event) {
+	const city = { name: event.locationName, lat: event.locationLat, lng: event.locationLng };
+	const followers = await nearbyFollowers(city, event.ownerId);
+	if (followers.size === 0) return;
+
+	const link = appLink(`/events/${event.nanoId}`);
+	const when = formatEventDate(event.startsAt);
+	await saveAndDeliver(
+		[...followers].map(([userId, follower]) => ({
+			userId,
+			email: follower.email,
+			telegramId: follower.telegramId,
+			message: `New event in ${cityLabel(city, follower.near)}: ${event.title} (${when}).`,
+			near: follower.near,
+			kind: 'event',
+			actorNanoId: null,
+			eventNanoId: event.nanoId,
+			city,
+			link,
+			linkLabel: 'Open event',
+			emailSubject: `Alumap: new event in ${city.name}`
+		}))
+	);
 }
 
 /** Called on approval: the alum "appears" in their current city. */

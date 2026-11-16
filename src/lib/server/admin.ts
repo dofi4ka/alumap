@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { db, events, users } from './db/index.ts';
-import { notifyAppearance } from './notifications.ts';
+import { notifyAppearance, notifyEventPublished } from './notifications.ts';
 
 export const approveUser = async (id: number) => {
 	const user = (await db.select().from(users).where(eq(users.id, id)))[0];
@@ -23,5 +23,12 @@ export const setBanned = async (id: number, isBanned: boolean) => {
 };
 
 export const publishEvent = async (id: number) => {
-	await db.update(events).set({ status: 'published' }).where(eq(events.id, id));
+	const event = (await db.select().from(events).where(eq(events.id, id)))[0];
+	if (!event || event.status === 'published') return;
+	const [published] = await db
+		.update(events)
+		.set({ status: 'published' })
+		.where(eq(events.id, id))
+		.returning();
+	if (published) await notifyEventPublished(published);
 };

@@ -460,7 +460,14 @@ export const actions: Actions = {
 		if (id)
 			await db
 				.delete(followedCities)
-				.where(and(eq(followedCities.id, id), eq(followedCities.userId, me.id)));
+				.where(
+					and(
+						eq(followedCities.id, id),
+						eq(followedCities.userId, me.id),
+						// automatically followed home/temporary cities cannot be deleted
+						eq(followedCities.source, 'manual')
+					)
+				);
 	},
 
 	changeEmail: async ({ request, locals, params }) => {

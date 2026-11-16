@@ -15,6 +15,13 @@
       "when": 1794798106166,
       "tag": "0001_past_lily_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794826654516,
+      "tag": "0002_event_notifications",
+      "breakpoints": true
     }
   ]
 }
