@@ -59,11 +59,18 @@
 			{/if}
 			<button class="btn-primary w-full" disabled={pending}>Set new password</button>
 		</form>
-		<form method="POST" action="?/resend" class="mt-3 text-center" use:enhance={submit}>
-			<input type="hidden" name="email" value={form.email} />
-			<input type="hidden" name="channel" value={channel} />
-			<button class="text-sm text-zinc-500 hover:text-zinc-800" disabled={pending}>Send the code again</button>
-		</form>
+		<div class="mt-3 flex items-center justify-center gap-3 text-sm">
+			<form method="POST" action="?/resend" use:enhance={submit}>
+				<input type="hidden" name="email" value={form.email} />
+				<input type="hidden" name="channel" value={channel} />
+				<button class="text-zinc-500 hover:text-zinc-800" disabled={pending}>Send the code again</button>
+			</form>
+			<span class="text-zinc-300">|</span>
+			<form method="POST" action="?/change" use:enhance={submit}>
+				<input type="hidden" name="email" value={form.email} />
+				<button class="text-zinc-500 hover:text-zinc-800" disabled={pending}>Wrong email?</button>
+			</form>
+		</div>
 	</AuthShell>
 {:else}
 	<AuthShell

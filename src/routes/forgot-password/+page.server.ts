@@ -10,17 +10,16 @@ import type { Actions } from './$types';
 
 type Channel = 'email' | 'telegram';
 
+/** Main email first, then the verified Innopolis address (only stored after verification). */
 const findUser = async (email: string) =>
-	(await db.select().from(users).where(eq(users.email, email)))[0] ?? null;
+	(await db.select().from(users).where(eq(users.email, email)))[0] ??
+	(await db.select().from(users).where(eq(users.ssoEmail, email)))[0] ??
+	null;
 
-async function sendResetCode(user: User): Promise<Channel> {
-	const code = await issueUserCode({
-		userId: user.id,
-		purpose: 'password-reset',
-		email: user.email
-	});
+async function sendResetCode(user: User, to: string): Promise<Channel> {
+	const code = await issueUserCode({ userId: user.id, purpose: 'password-reset', email: to });
 	if (user.telegramId && (await sendTelegramCode(user.telegramId, code))) return 'telegram';
-	await sendVerificationCode(user.email, code, 'password-reset');
+	await sendVerificationCode(to, code, 'password-reset');
 	return 'email';
 }
 
@@ -34,7 +33,7 @@ export const actions: Actions = {
 		let channel: Channel = 'email';
 		if (user) {
 			try {
-				channel = await sendResetCode(user);
+				channel = await sendResetCode(user, email);
 			} catch (e) {
 				console.error('[password reset]', e);
 				return fail(400, { email, error: 'Could not send the code, try again later' });
@@ -43,12 +42,18 @@ export const actions: Actions = {
 		return { step: 'verify' as const, email, channel };
 	},
 
+	/** Goes back to the email step, keeping what the user typed so a typo is easy to fix. */
+	change: async ({ request }) => {
+		const email = str(await request.formData(), 'email')?.toLowerCase() ?? '';
+		return { email };
+	},
+
 	resend: async ({ request }) => {
 		const email = str(await request.formData(), 'email')?.toLowerCase() ?? '';
 		const user = await findUser(email);
 		if (!user) return { step: 'verify' as const, email, channel: 'email' as const, resent: true };
 		try {
-			const channel = await sendResetCode(user);
+			const channel = await sendResetCode(user, email);
 			return { step: 'verify' as const, email, channel, resent: true };
 		} catch (e) {
 			console.error('[password reset]', e);
