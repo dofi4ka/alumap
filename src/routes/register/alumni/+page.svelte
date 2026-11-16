@@ -21,7 +21,7 @@
 	};
 </script>
 
-<svelte:head><title>Alumap - IU alumni verification</title></svelte:head>
+<svelte:head><title>Alumap - IU status verification</title></svelte:head>
 
 <div class="mx-auto max-w-md">
 	<div class="mb-5 flex items-center gap-2 text-xs font-medium text-zinc-500">
@@ -36,8 +36,8 @@
 		{#if verifying && form}
 			<h1 class="text-xl font-semibold">Check your Innopolis email</h1>
 			<p class="mt-1 mb-4 text-sm text-zinc-500">
-				We sent a 6-digit code to <b>{ssoEmail}</b>. Confirming it marks your account as IU alumni
-				{graduationYear ? `, class of ${graduationYear}` : ''}.
+				We sent a 6-digit code to <b>{ssoEmail}</b>. Confirming it sets your IU status
+				{graduationYear ? `, class of ${graduationYear}` : ''}. Until 1 August of that year you will be shown as IU Student.
 			</p>
 			<form method="POST" action="?/verify" class="space-y-3" use:enhance={submit}>
 				<CodeInput autofocus />
@@ -45,7 +45,7 @@
 				{#if 'resent' in form && form.resent}
 					<p class="text-center text-sm text-brand-700">New code sent</p>
 				{/if}
-				<button class="btn-primary w-full" disabled={pending}>Verify and become IU alumni</button>
+				<button class="btn-primary w-full" disabled={pending}>Verify and confirm IU status</button>
 			</form>
 			<div class="mt-4 flex items-center justify-between text-sm">
 				<form method="POST" action="?/resend" use:enhance={submit}>
@@ -56,8 +56,7 @@
 		{:else}
 			<h1 class="text-xl font-semibold">IU Alumni Verification</h1>
 			<p class="mt-1 mb-4 text-sm text-zinc-500">
-				Verify your Innopolis University email to get the IU alumni status and graduation year on your
-				profile. This is step 2 of registration — you can skip it and come back any time from your account.
+				Verify your Innopolis University email to get your IU status and graduation year on your profile. This is step 2 of registration — you can skip it and come back any time from your account.
 			</p>
 			<form method="POST" action="?/start" class="space-y-3" use:enhance={submit}>
 				<div>
@@ -82,7 +81,7 @@
 						name="graduationYear"
 						value={graduationYear ?? ''}
 						min="2014"
-						max={new Date().getFullYear() + 1}
+						max={new Date().getFullYear() + 4}
 						placeholder="2024"
 						required
 					/>

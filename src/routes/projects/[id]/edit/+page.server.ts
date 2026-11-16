@@ -1,11 +1,12 @@
 import { error, redirect } from '@sveltejs/kit';
 import { getProject, saveProject } from '#lib/server/projects.ts';
+import { sanitizeRichText } from '#lib/server/rich-text.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const { project, canEdit } = await getProject(params.id, locals.user!);
 	if (!canEdit) error(403, 'Forbidden');
-	return { project };
+	return { project: { ...project, description: sanitizeRichText(project.description) } };
 };
 
 export const actions: Actions = {

@@ -48,7 +48,7 @@
 	</header>
 
 	{#if p.description}
-		<p class="mt-6 whitespace-pre-line text-zinc-800">{p.description}</p>
+		<div class="rich-text mt-6 text-zinc-800">{@html p.description}</div>
 	{/if}
 
 	<div class="mt-6 flex items-center gap-3 text-sm">

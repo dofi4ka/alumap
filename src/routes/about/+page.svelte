@@ -15,5 +15,5 @@
 </div>
 
 {#if data.about.content}
-	<div class="leading-relaxed whitespace-pre-line text-zinc-800">{data.about.content}</div>
+	<div class="rich-text leading-relaxed text-zinc-800">{@html data.about.content}</div>
 {/if}

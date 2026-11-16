@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { ImagePlus } from '@lucide/svelte';
 	import { imageUrl } from '#lib/images.ts';
+	import RichTextEditor from './RichTextEditor.svelte';
 
 	type ProjectValues = {
 		title: string;
@@ -78,8 +79,12 @@
 	</div>
 
 	<div class="sm:col-span-2">
-		<label class="label" for="pr-desc">Description</label>
-		<textarea id="pr-desc" class="input min-h-40" name="description" maxlength="5000" placeholder="What is the project about, what the money is for…">{project?.description ?? ''}</textarea>
+		<span class="label">Description</span>
+		<RichTextEditor
+			name="description"
+			value={project?.description ?? ''}
+			placeholder="What is the project about, what the money is for…"
+		/>
 	</div>
 
 	{#if error}<p class="error-box sm:col-span-2">{error}</p>{/if}

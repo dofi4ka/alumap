@@ -70,6 +70,14 @@ export function setupMiniApp(): Promise<Sdk | null> {
 			if (mod.viewport.requestFullscreen.isSupported() && !mod.viewport.isFullscreen()) {
 				await mod.viewport.requestFullscreen({ timeout: 5000 });
 			}
+			// In fullscreen Telegram draws its controls over the webview; reserve room above our header.
+			const syncFullscreen = () =>
+				document.documentElement.toggleAttribute(
+					'data-tma-fullscreen',
+					mod.viewport.isFullscreen()
+				);
+			syncFullscreen();
+			mod.viewport.isFullscreen.sub(syncFullscreen);
 		} catch (err) {
 			console.warn('[miniapp] viewport setup failed', err);
 		}

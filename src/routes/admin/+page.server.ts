@@ -8,6 +8,7 @@ import { nanoid } from 'nanoid';
 import { deleteEvent } from '#lib/server/events.ts';
 import { int, oneOf, str } from '#lib/server/forms.ts';
 import { getAboutPage, saveAboutPage } from '#lib/server/pages.ts';
+import { richTextFromForm } from '#lib/server/rich-text.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 const userColumns = {
@@ -157,8 +158,11 @@ export const actions: Actions = {
 	saveAbout: async ({ request }) => {
 		const fd = await request.formData();
 		const title = str(fd, 'title', 120);
-		const content = str(fd, 'content', 20000);
-		if (!title || !content) return fail(400, { error: 'Fill in title and content' });
-		await saveAboutPage(title, content);
+		const content = richTextFromForm(fd, 'content', 20000);
+		if (!title || 'error' in content || !content.html)
+			return fail(400, {
+				error: ('error' in content ? content.error : null) ?? 'Fill in title and content'
+			});
+		await saveAboutPage(title, content.html);
 	}
 };

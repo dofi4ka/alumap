@@ -4,6 +4,7 @@ import { db, eventOrganizers, eventParticipants, events, users, type Event, type
 import { DATETIME, int, location, str } from './forms.ts';
 import { publicId } from './ids.ts';
 import { deleteImage, saveImage } from './images.ts';
+import { richTextFromForm } from './rich-text.ts';
 
 /** Deletes the event (attendees cascade) and its picture. */
 export async function deleteEvent(event: Event) {
@@ -94,6 +95,8 @@ export async function saveEvent(
 	if (!startsAt || !DATETIME.test(startsAt)) return fail(400, { error: 'Set date and time' });
 	if (!loc) return fail(400, { error: 'Pick a city from the list' });
 	if (cost !== null && (cost < 0 || cost > 10_000_000)) return fail(400, { error: 'Invalid price' });
+	const description = richTextFromForm(fd, 'description', 5000);
+	if ('error' in description) return fail(400, { error: description.error });
 
 	let imageId: string | null;
 	try {
@@ -106,7 +109,7 @@ export async function saveEvent(
 		title,
 		startsAt,
 		cost: cost || null,
-		description: str(fd, 'description', 5000) ?? '',
+		description: description.html,
 		address: str(fd, 'address', 200),
 		...loc
 	};

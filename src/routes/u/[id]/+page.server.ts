@@ -7,6 +7,7 @@ import {
 	badges,
 	db,
 	experiences,
+	followedCities,
 	referralCopies,
 	referrals,
 	skills,
@@ -27,6 +28,7 @@ import {
 	setTemporaryLocation,
 	updateHomeLocation
 } from '#lib/server/locations.ts';
+import { isValidGraduationYear, iuStatus, maxGraduationYear } from '#lib/iu-status.ts';
 import { normalizeUrl } from '#lib/socials.ts';
 import { createLinkToken, getBotUsername } from '#lib/server/telegram.ts';
 import {
@@ -81,7 +83,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	// private contact details only for the owner and admins
 	const canSeePrivate = isSelf || me.isAdmin;
 
-	const [userExperiences, badgeList, skillRows, socialRows, referralRows] = await Promise.all([
+	const [userExperiences, badgeList, skillRows, socialRows, referralRows, followRows] = await Promise.all([
 		db
 			.select()
 			.from(experiences)
@@ -94,7 +96,12 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			.select({ id: referrals.id, company: referrals.company, url: referrals.url })
 			.from(referrals)
 			.where(eq(referrals.userId, u.id))
-			.orderBy(asc(referrals.id))
+			.orderBy(asc(referrals.id)),
+		db
+			.select()
+			.from(followedCities)
+			.where(eq(followedCities.userId, u.id))
+			.orderBy(desc(followedCities.enabled), asc(followedCities.createdAt))
 	]);
 
 	const copies =
@@ -102,7 +109,13 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			? await db
 					.select({ referralId: referralCopies.referralId, count: sql<number>`count(*)::int` })
 					.from(referralCopies)
-					.where(inArray(referralCopies.referralId, referralRows.map((r) => r.id)))
+					.where(
+						and(
+							inArray(referralCopies.referralId, referralRows.map((r) => r.id)),
+							// never count the profile owner's own copies
+							ne(referralCopies.userId, u.id)
+						)
+					)
 					.groupBy(referralCopies.referralId)
 			: [];
 	const copiesByReferral = new Map(copies.map((c) => [c.referralId, Number(c.count)]));
@@ -130,7 +143,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 				url: isSelf ? r.url : null,
 				copies: copiesByReferral.get(r.id) ?? 0
 			})),
-			alumni: !!u.ssoEmail,
+			status: iuStatus(u),
 			ssoEmail: canSeePrivate ? u.ssoEmail : null,
 			location: effective,
 			homeLocation: homeLocation(u),
@@ -146,12 +159,30 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		experiences: userExperiences,
 		badges: badgeList,
 		skills: skillRows.map((s) => s.name),
+		// Followed cities are a private setting, not part of the public profile data.
+		follows: isSelf
+			? followRows.map((f) => ({
+					id: f.id,
+					name: f.name,
+					lat: f.lat,
+					lng: f.lng,
+					source: f.source,
+					enabled: f.enabled
+				}))
+			: [],
 		isSelf,
 		canEdit: isSelf || me.isAdmin,
 		viewerIsAdmin: me.isAdmin,
 		botEnabled: !!getBotUsername()
 	};
 };
+
+/** Only the owner can manage their own notification settings. */
+async function selfOnly({ params, locals }: RequestEvent): Promise<User> {
+	const me = locals.user!;
+	if (me.nanoId !== params.id) error(403, 'Forbidden');
+	return me;
+}
 
 /** Resolves the edited user and checks that the current user may edit them. */
 async function editable({ params, locals }: RequestEvent): Promise<User> {
@@ -224,8 +255,8 @@ export const actions: Actions = {
 		// IU alumni can change their year; IU friends stay friends (unless an admin decides otherwise)
 		if (target.ssoEmail || event.locals.user!.isAdmin) {
 			graduationYear = int(fd, 'graduationYear');
-			if (graduationYear !== null && (graduationYear < 2014 || graduationYear > new Date().getFullYear() + 1))
-				return fail(400, { error: 'Invalid graduation year' });
+			if (graduationYear !== null && !isValidGraduationYear(graduationYear))
+				return fail(400, { error: `Graduation year must be between 2014 and ${maxGraduationYear()}` });
 		}
 
 		const socialsEdited = fd.get('socialsEdited') === '1';
@@ -356,10 +387,12 @@ export const actions: Actions = {
 		if (!id) return fail(400, { error: 'Missing referral' });
 		const referral = (await db.select().from(referrals).where(eq(referrals.id, id)))[0];
 		if (!referral) return fail(404, { error: 'This referral no longer exists' });
-		await db
-			.insert(referralCopies)
-			.values({ referralId: referral.id, userId: event.locals.user!.id })
-			.onConflictDoNothing();
+		// the owner copying their own link should not inflate the unique-copy count
+		if (referral.userId !== event.locals.user!.id)
+			await db
+				.insert(referralCopies)
+				.values({ referralId: referral.id, userId: event.locals.user!.id })
+				.onConflictDoNothing();
 		return { url: referral.url };
 	},
 
@@ -380,6 +413,54 @@ export const actions: Actions = {
 	clearTemporaryLocation: async (event) => {
 		const target = await editable(event);
 		await clearTemporaryLocation(target.id);
+	},
+
+	addFollowCity: async (event) => {
+		const me = await selfOnly(event);
+		const loc = location(await event.request.formData());
+		if (!loc) return fail(400, { error: 'Pick a city from the list' });
+		const count = await db.$count(followedCities, eq(followedCities.userId, me.id));
+		if (count >= 20) return fail(400, { error: 'You can follow up to 20 cities' });
+		await db
+			.insert(followedCities)
+			.values({
+				userId: me.id,
+				name: loc.locationName,
+				lat: loc.locationLat,
+				lng: loc.locationLng,
+				source: 'manual',
+				enabled: true
+			})
+			.onConflictDoUpdate({
+				target: [followedCities.userId, followedCities.lat, followedCities.lng],
+				set: { enabled: true }
+			});
+	},
+
+	toggleFollowCity: async (event) => {
+		const me = await selfOnly(event);
+		const id = int(await event.request.formData(), 'id');
+		if (!id) return;
+		const row = (
+			await db
+				.select()
+				.from(followedCities)
+				.where(and(eq(followedCities.id, id), eq(followedCities.userId, me.id)))
+		)[0];
+		if (!row) return;
+		await db
+			.update(followedCities)
+			.set({ enabled: !row.enabled })
+			.where(eq(followedCities.id, row.id));
+	},
+
+	removeFollowCity: async (event) => {
+		const me = await selfOnly(event);
+		const id = int(await event.request.formData(), 'id');
+		if (id)
+			await db
+				.delete(followedCities)
+				.where(and(eq(followedCities.id, id), eq(followedCities.userId, me.id)));
 	},
 
 	changeEmail: async ({ request, locals, params }) => {

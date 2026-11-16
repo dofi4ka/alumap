@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import {
+		Bell,
+		BellOff,
 		Briefcase,
 		Cake,
 		Camera,
@@ -36,11 +38,13 @@
 		formatMonth,
 		locationTypes
 	} from '#lib/format.ts';
+	import { iuStatusLabel } from '#lib/iu-status.ts';
 	import { socialLabel } from '#lib/socials.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
 	const p = $derived(data.profile);
+	const sourceLabel = { location: 'Your location', temporary: 'Temporary location', manual: 'Added by you' };
 
 	let editingHeader = $state(false);
 	let editingExp = $state<number | null>(null);
@@ -167,13 +171,7 @@
 			<h1 class="mt-3 text-2xl font-bold tracking-tight">{p.firstName} {p.lastName}</h1>
 			{#if p.headline}<p class="mt-0.5 text-zinc-700">{p.headline}</p>{/if}
 			<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-500">
-				<span class="chip">
-					{#if p.alumni}
-						IU alumni{p.graduationYear ? ` ’${String(p.graduationYear).slice(2)}` : ''}
-					{:else}
-						IU Friend
-					{/if}
-				</span>
+				<span class="chip">{iuStatusLabel(p.status, p.graduationYear)}</span>
 				{#if p.location}
 					<a
 						href="/?lat={p.location.lat}&lng={p.location.lng}&zoom=9"
@@ -214,51 +212,6 @@
 		</div>
 	</section>
 
-	<!-- Temporary location -->
-	{#if data.canEdit || p.temporaryLocation}
-		<section class="card">
-			<div class="flex items-start justify-between gap-3">
-				<div class="min-w-0">
-					<h2 class="text-lg font-semibold">Temporary location</h2>
-					{#if p.temporaryLocation}
-						<p class="mt-1 text-sm text-zinc-600">
-							<b>{p.temporaryLocation.name}</b> until {formatDay(p.temporaryLocation.expiresAt)}
-							{#if p.homeLocation}
-								<span class="text-zinc-400">· home is {p.homeLocation.name}</span>
-							{/if}
-						</p>
-						<p class="mt-1 text-xs text-zinc-400">
-							You are shown on the map here. Your home city comes back automatically when it ends.
-						</p>
-					{:else}
-						<p class="mt-1 text-sm text-zinc-500">
-							Travelling or staying elsewhere for a while? Set a temporary city without changing your home
-							location.
-						</p>
-					{/if}
-				</div>
-				{#if data.canEdit}
-					<div class="flex shrink-0 gap-1">
-						<button class="btn-secondary py-2" onclick={() => (tempModalOpen = true)}>
-							{p.temporaryLocation ? 'Change' : 'Set city'}
-						</button>
-						{#if p.temporaryLocation}
-							<form method="POST" action="?/clearTemporaryLocation" use:enhance={submitThen()}>
-								<button class="btn-ghost text-zinc-500" title="Clear temporary location" aria-label="Clear temporary location">
-									<X size={18} />
-								</button>
-							</form>
-						{/if}
-					</div>
-				{/if}
-			</div>
-		</section>
-	{/if}
-
-	<Modal bind:open={tempModalOpen} title="Temporary location">
-		<TemporaryLocationForm close={() => (tempModalOpen = false)} />
-	</Modal>
-
 	<!-- About -->
 	{#if p.bio || data.canEdit}
 		<Section title="About" canEdit={data.canEdit}>
@@ -298,12 +251,11 @@
 						</div>
 						<div class="min-w-0 flex-1">
 							<div class="truncate font-semibold">{r.company}</div>
-							<div class="text-xs text-zinc-500">
-								Referral link
-								{#if data.canEdit}
-									· {r.copies} {r.copies === 1 ? 'person copied' : 'people copied'}
-								{/if}
-							</div>
+							{#if data.canEdit}
+								<div class="text-xs text-zinc-500">
+									{r.copies} {r.copies === 1 ? 'person copied' : 'people copied'}
+								</div>
+							{/if}
 						</div>
 						<form method="POST" action="?/copyReferral" use:enhance={copyReferral(r.id)}>
 							<input type="hidden" name="id" value={r.id} />
@@ -394,6 +346,49 @@
 			</div>
 		</Modal>
 	{/if}
+
+	<!-- Temporary location -->
+	{#if p.homeLocation && (data.canEdit || p.temporaryLocation)}
+		<section class="card">
+			<div class="flex items-start justify-between gap-3">
+				<div class="min-w-0">
+					<h2 class="text-lg font-semibold">Temporary location</h2>
+					{#if p.temporaryLocation}
+						<p class="mt-1 text-sm text-zinc-600">
+							<b>{p.temporaryLocation.name}</b> until {formatDay(p.temporaryLocation.expiresAt)}
+							<span class="text-zinc-400">· home is {p.homeLocation.name}</span>
+						</p>
+						<p class="mt-1 text-xs text-zinc-400">
+							You are shown on the map here. Your home city comes back automatically when it ends.
+						</p>
+					{:else}
+						<p class="mt-1 text-sm text-zinc-500">
+							Travelling or staying elsewhere for a while? Set a temporary city without changing your home
+							location.
+						</p>
+					{/if}
+				</div>
+				{#if data.canEdit}
+					<div class="flex shrink-0 gap-1">
+						<button class="btn-secondary py-2" onclick={() => (tempModalOpen = true)}>
+							{p.temporaryLocation ? 'Change' : 'Set city'}
+						</button>
+						{#if p.temporaryLocation}
+							<form method="POST" action="?/clearTemporaryLocation" use:enhance={submitThen()}>
+								<button class="btn-ghost text-zinc-500" title="Clear temporary location" aria-label="Clear temporary location">
+									<X size={18} />
+								</button>
+							</form>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</section>
+	{/if}
+
+	<Modal bind:open={tempModalOpen} title="Temporary location">
+		<TemporaryLocationForm close={() => (tempModalOpen = false)} />
+	</Modal>
 
 	<!-- Experience -->
 	{#if data.experiences.length || data.canEdit}
@@ -488,6 +483,52 @@
 		</Section>
 	{/if}
 
+
+	{#if data.isSelf}
+		<Section title="Cities you follow">
+			<p class="text-sm text-zinc-500">
+				Get notified when an alum appears in one of these cities or within 150 km of them.
+			</p>
+			<ul class="mt-4 space-y-2">
+				{#each data.follows as city (city.id)}
+					<li class="flex items-center gap-3 rounded-xl border border-zinc-200 px-3 py-2.5 {city.enabled ? '' : 'opacity-60'}">
+						<div class="min-w-0 flex-1">
+							<p class="truncate text-sm font-medium">{city.name}</p>
+							<p class="text-xs text-zinc-500">{sourceLabel[city.source]}</p>
+						</div>
+						<form method="POST" action="?/toggleFollowCity" use:enhance={submitThen()} class="contents">
+							<input type="hidden" name="id" value={city.id} />
+							<button
+								class="btn-ghost shrink-0"
+								title={city.enabled ? 'Mute notifications for this city' : 'Unmute notifications for this city'}
+								aria-label={city.enabled ? 'Mute {city.name}' : 'Unmute {city.name}'}
+							>
+								{#if city.enabled}<Bell size={17} />{:else}<BellOff size={17} />{/if}
+							</button>
+						</form>
+						<form method="POST" action="?/removeFollowCity" use:enhance={submitThen()} class="contents">
+							<input type="hidden" name="id" value={city.id} />
+							<button class="btn-ghost shrink-0 text-zinc-400" aria-label="Remove {city.name}">
+								<X size={16} />
+							</button>
+						</form>
+					</li>
+				{:else}
+					<li class="rounded-xl border border-dashed border-zinc-200 px-3 py-4 text-sm text-zinc-400">
+						No cities yet — add your current city or any city you care about.
+					</li>
+				{/each}
+			</ul>
+			<form method="POST" action="?/addFollowCity" use:enhance={submitThen()} class="mt-4 space-y-2">
+				<CityPicker placeholder="Add a city, e.g. Kazan" />
+				<button class="btn-secondary w-full"><Plus size={16} />Follow city</button>
+			</form>
+			{#if !p.isApproved}
+				<p class="mt-3 text-xs text-zinc-400">Notifications start after your account is approved.</p>
+			{/if}
+		</Section>
+	{/if}
+
 	{#if data.canEdit}
 		<!-- Account -->
 		<Section title="Account">
@@ -510,20 +551,20 @@
 						{/if}
 						<div class="flex items-center justify-between gap-4 px-3 py-3">
 							<div class="min-w-0">
-								<p class="text-sm font-medium">IU alumni status</p>
-								{#if p.alumni}
-									<p class="truncate text-sm text-brand-700">
-										Verified{p.ssoEmail ? ` · ${p.ssoEmail}` : ''}
-									</p>
-								{:else}
+								<p class="text-sm font-medium">IU status</p>
+								{#if p.status === 'friend'}
 									<p class="text-sm text-zinc-500">Not verified — you are an IU Friend</p>
+								{:else}
+									<p class="truncate text-sm text-brand-700">
+										{iuStatusLabel(p.status, p.graduationYear)} · Verified{p.ssoEmail ? ` · ${p.ssoEmail}` : ''}
+									</p>
 								{/if}
 							</div>
-							{#if !p.alumni && data.isSelf}
+							{#if p.status === 'friend' && data.isSelf}
 								<a class="btn-secondary shrink-0 py-1.5" href="/register/alumni">IU Alumni Verification</a>
 							{/if}
 						</div>
-						{#if p.alumni && p.graduationYear}
+						{#if p.status !== 'friend' && p.graduationYear}
 							<div class="flex items-center justify-between gap-4 px-3 py-3">
 								<p class="text-sm font-medium">Graduation year</p>
 								<p class="text-sm text-zinc-500">{p.graduationYear}</p>
@@ -662,10 +703,18 @@
 						maxlength="120"
 					/>
 				</div>
-				{#if p.alumni || data.viewerIsAdmin}
+				{#if p.status !== 'friend' || data.viewerIsAdmin}
 					<div>
 						<label class="label" for="gy">Graduation year</label>
-						<input id="gy" class="input" type="number" name="graduationYear" min="2014" value={p.graduationYear ?? ''} />
+						<input
+							id="gy"
+							class="input"
+							type="number"
+							name="graduationYear"
+							min="2014"
+							max={new Date().getFullYear() + 4}
+							value={p.graduationYear ?? ''}
+						/>
 					</div>
 				{/if}
 				<div>
@@ -715,10 +764,6 @@
 							<Plus size={15} />Add link
 						</button>
 					{/if}
-					<p class="text-xs text-zinc-500">
-						Paste any http(s) link. GitHub, LinkedIn, X, Telegram, Instagram and other well-known sites get
-						their icon automatically.
-					</p>
 				</div>
 				<FormActions onCancel={() => (editingHeader = false)} />
 			</form>

@@ -1,11 +1,15 @@
 import { error, redirect } from '@sveltejs/kit';
 import { getCoOrganizers, getEvent, saveEvent } from '#lib/server/events.ts';
+import { sanitizeRichText } from '#lib/server/rich-text.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const { event, canEdit } = await getEvent(params.id, locals.user!);
 	if (!canEdit) error(403, 'Forbidden');
-	return { event, coOrganizers: await getCoOrganizers(event.id) };
+	return {
+		event: { ...event, description: sanitizeRichText(event.description) },
+		coOrganizers: await getCoOrganizers(event.id)
+	};
 };
 
 export const actions: Actions = {

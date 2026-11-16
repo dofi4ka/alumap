@@ -78,3 +78,112 @@
 @utility error-box {
 	@apply rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700;
 }
+
+/* Sanitized rich text rendered from the editor */
+.rich-text > :first-child {
+	margin-top: 0;
+}
+.rich-text > :last-child {
+	margin-bottom: 0;
+}
+.rich-text p {
+	margin: 0.6rem 0;
+}
+.rich-text h2 {
+	margin: 1.25rem 0 0.5rem;
+	font-size: 1.25rem;
+	line-height: 1.3;
+	font-weight: 700;
+}
+.rich-text h3 {
+	margin: 1rem 0 0.4rem;
+	font-size: 1.075rem;
+	line-height: 1.35;
+	font-weight: 600;
+}
+.rich-text ul,
+.rich-text ol {
+	margin: 0.6rem 0;
+	padding-left: 1.4rem;
+}
+.rich-text ul {
+	list-style: disc;
+}
+.rich-text ol {
+	list-style: decimal;
+}
+.rich-text li {
+	margin: 0.15rem 0;
+}
+.rich-text blockquote {
+	margin: 0.75rem 0;
+	border-left: 3px solid var(--color-brand-300);
+	padding-left: 0.9rem;
+	color: var(--color-zinc-600);
+}
+.rich-text a {
+	color: var(--color-brand-700);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+.rich-text code {
+	border-radius: 0.3rem;
+	background: var(--color-zinc-100);
+	padding: 0.1rem 0.3rem;
+	font-size: 0.9em;
+}
+.rich-text pre {
+	margin: 0.75rem 0;
+	overflow-x: auto;
+	border-radius: 0.75rem;
+	background: var(--color-zinc-900);
+	padding: 0.9rem 1rem;
+	color: white;
+	font-size: 0.85rem;
+}
+.rich-text hr {
+	margin: 1.25rem 0;
+	border-color: var(--color-zinc-200);
+}
+
+/* Quill editor */
+.rich-text-editor .ql-toolbar.ql-snow {
+	border: 1px solid var(--color-zinc-200);
+	border-radius: 0.75rem 0.75rem 0 0;
+	padding: 0.5rem;
+	background: white;
+}
+.rich-text-editor .ql-container.ql-snow {
+	border: 1px solid var(--color-zinc-200);
+	border-top: 0;
+	border-radius: 0 0 0.75rem 0.75rem;
+	background: white;
+	font-family: inherit;
+	font-size: 1rem;
+}
+.rich-text-editor .ql-editor {
+	min-height: 10rem;
+	line-height: 1.6;
+}
+.rich-text-editor .ql-editor.ql-blank::before {
+	color: var(--color-zinc-400);
+	font-style: normal;
+}
+
+/* Telegram already draws its own header controls over the webview; keep our header below them. */
+html[data-tma] {
+	--tg-inset-top: max(
+		0.75rem,
+		env(safe-area-inset-top, 0px),
+		var(--tg-viewport-safe-area-inset-top, 0px),
+		var(--tg-viewport-content-safe-area-inset-top, 0px)
+	);
+}
+html[data-tma-fullscreen] {
+	--tg-inset-top: max(
+		3rem,
+		env(safe-area-inset-top, 0px),
+		var(--tg-viewport-safe-area-inset-top, 0px),
+		var(--tg-viewport-content-safe-area-inset-top, 0px)
+	);
+}

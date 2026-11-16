@@ -4,6 +4,7 @@ import { publishEvent } from '#lib/server/admin.ts';
 import { db, eventParticipants, users } from '#lib/server/db/index.ts';
 import { deleteEvent, getCoOrganizers, getEvent, isOrganizer } from '#lib/server/events.ts';
 import { isPastEvent } from '#lib/format.ts';
+import { sanitizeRichText } from '#lib/server/rich-text.ts';
 import type { Actions, PageServerLoad, RequestEvent } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
@@ -37,7 +38,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	const participants = attendees.filter((p) => !organizerIds.has(p.id));
 
 	return {
-		event,
+		event: { ...event, description: sanitizeRichText(event.description) },
 		organizers,
 		participants,
 		isOrganizer: organizerIds.has(me.id),

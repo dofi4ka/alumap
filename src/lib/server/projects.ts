@@ -4,6 +4,7 @@ import { db, projects, type Project, type User } from './db/index.ts';
 import { int, str } from './forms.ts';
 import { publicId } from './ids.ts';
 import { deleteImage, saveImage } from './images.ts';
+import { richTextFromForm } from './rich-text.ts';
 
 export async function getProject(nanoId: string, viewer: User) {
 	const project = (await db.select().from(projects).where(eq(projects.nanoId, nanoId)))[0];
@@ -45,6 +46,8 @@ export async function saveProject(
 	if (!title) return fail(400, { error: 'Title is required' });
 	if (url === undefined) return fail(400, { error: 'Invalid donation link' });
 	if (goal !== null && (goal < 0 || goal > 1_000_000_000)) return fail(400, { error: 'Invalid fundraising goal' });
+	const description = richTextFromForm(fd, 'description', 5000);
+	if ('error' in description) return fail(400, { error: description.error });
 
 	let imageId: string | null;
 	try {
@@ -55,7 +58,7 @@ export async function saveProject(
 
 	const values = {
 		title,
-		description: str(fd, 'description', 5000) ?? '',
+		description: description.html,
 		donationUrl: url,
 		fundraisingGoal: goal || null
 	};

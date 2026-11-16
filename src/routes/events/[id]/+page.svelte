@@ -48,7 +48,7 @@
 				</form>
 			{/if}
       {#if e.description}
-        <p class="mt-6 whitespace-pre-line text-zinc-800 hidden sm:block">{e.description}</p>
+        <div class="rich-text mt-6 hidden text-zinc-800 sm:block">{@html e.description}</div>
       {/if}
 		</div>
 		<div class="aspect-square w-36 shrink-0 overflow-hidden rounded-2xl sm:w-52">
@@ -61,7 +61,7 @@
 	</header>
 
   {#if e.description}
-    <p class="mt-6 whitespace-pre-line text-zinc-800 sm:hidden">{e.description}</p>
+    <div class="rich-text mt-6 text-zinc-800 sm:hidden">{@html e.description}</div>
   {/if}
 
 	<div class="mt-6 flex items-center gap-3 text-sm">

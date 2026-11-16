@@ -18,8 +18,8 @@ const alumniVerificationPath = '/register/alumni';
 const unapprovedPaths = [
 	'/logout',
 	'/profile',
-	'/notifications',
 	'/api/cities',
+	'/api/notifications',
 	'/uploads/',
 	'/banned',
 	alumniVerificationPath
@@ -58,6 +58,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const response = await resolve(event);
 	// everything that may earn a badge (profile edits, attendance, events) is a form post
-	if (event.request.method === 'POST') await grantAutoBadges();
+	if (event.request.method === 'POST' && !path.startsWith('/api/')) await grantAutoBadges();
 	return response;
 };

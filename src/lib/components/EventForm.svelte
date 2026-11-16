@@ -3,6 +3,7 @@
 	import { ImagePlus } from '@lucide/svelte';
 	import CityPicker from './CityPicker.svelte';
 	import UserPicker from './UserPicker.svelte';
+	import RichTextEditor from './RichTextEditor.svelte';
 	import { imageUrl } from '#lib/images.ts';
 
 	type EventValues = {
@@ -106,8 +107,12 @@
 	</div>
 
 	<div class="sm:col-span-2">
-		<label class="label" for="ev-desc">Description</label>
-		<textarea id="ev-desc" class="input min-h-40" name="description" maxlength="5000" placeholder="What will happen, who is it for, how to get there…">{event?.description ?? ''}</textarea>
+		<span class="label">Description</span>
+		<RichTextEditor
+			name="description"
+			value={event?.description ?? ''}
+			placeholder="What will happen, who is it for, how to get there…"
+		/>
 	</div>
 	<div class="sm:col-span-2">
 		<span class="label">Co-organizers</span>

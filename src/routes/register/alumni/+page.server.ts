@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { and, eq, ne } from 'drizzle-orm';
 import { isAlumniEmail } from '#lib/emails.ts';
+import { isValidGraduationYear, maxGraduationYear } from '#lib/iu-status.ts';
 import { db, users } from '#lib/server/db/index.ts';
 import { sendVerificationCode } from '#lib/server/email.ts';
 import { int, str } from '#lib/server/forms.ts';
@@ -14,8 +15,6 @@ export const load: PageServerLoad = ({ locals }) => {
 	return { graduationYear: user.graduationYear };
 };
 
-const yearOk = (year: number | null) =>
-	year !== null && year >= 2014 && year <= new Date().getFullYear() + 1;
 
 export const actions: Actions = {
 	start: async ({ request, locals }) => {
@@ -28,8 +27,8 @@ export const actions: Actions = {
 
 		if (!isAlumniEmail(ssoEmail))
 			return err('Enter your @innopolis.university or @innopolis.ru email');
-		if (!yearOk(graduationYear))
-			return err(`Graduation year must be between 2014 and ${new Date().getFullYear() + 1}`);
+		if (!isValidGraduationYear(graduationYear))
+			return err(`Graduation year must be between 2014 and ${maxGraduationYear()}`);
 		const taken = (
 			await db
 				.select({ id: users.id })

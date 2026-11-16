@@ -2,6 +2,7 @@ import { error, redirect } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { db, projects, users } from '#lib/server/db/index.ts';
 import { deleteProject, getProject } from '#lib/server/projects.ts';
+import { sanitizeRichText } from '#lib/server/rich-text.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
@@ -12,7 +13,12 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			.from(users)
 			.where(eq(users.id, project.ownerId))
 	)[0]!;
-	return { project, owner, canEdit, isAdmin: locals.user!.isAdmin };
+	return {
+		project: { ...project, description: sanitizeRichText(project.description) },
+		owner,
+		canEdit,
+		isAdmin: locals.user!.isAdmin
+	};
 };
 
 export const actions: Actions = {

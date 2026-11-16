@@ -6,9 +6,11 @@
 	import BadgeForm from '#lib/components/BadgeForm.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import PeopleModal from '#lib/components/PeopleModal.svelte';
+	import RichTextEditor from '#lib/components/RichTextEditor.svelte';
 	import { Plus } from '@lucide/svelte';
 	import { submitThen } from '#lib/enhance.ts';
 	import { formatEventDate } from '#lib/format.ts';
+	import { iuStatus, iuStatusLabel } from '#lib/iu-status.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -52,9 +54,7 @@
 		)
 	);
 	const kind = (u: { ssoEmail: string | null; graduationYear: number | null }) =>
-		u.ssoEmail
-			? `IU alumni${u.graduationYear ? ` ’${String(u.graduationYear).slice(2)}` : ''}`
-			: 'IU Friend';
+		iuStatusLabel(iuStatus(u), u.graduationYear);
 </script>
 
 <svelte:head><title>Alumap - Admin</title></svelte:head>
@@ -235,17 +235,9 @@
 			/>
 		</div>
 		<div>
-			<label class="label" for="about-content">Content</label>
-			<textarea
-				id="about-content"
-				class="input min-h-72"
-				name="content"
-				maxlength="20000"
-				required
-				oninput={() => (savedAbout = false)}>{data.about.content}</textarea
-			>
+			<span class="label">Content</span>
+			<RichTextEditor name="content" value={data.about.content} onchange={() => (savedAbout = false)} />
 			<p class="mt-1 text-xs text-zinc-400">
-				Plain text: line breaks are preserved, blank lines separate paragraphs.
 				<a href="/about" class="underline hover:text-zinc-600">View page</a>
 			</p>
 		</div>

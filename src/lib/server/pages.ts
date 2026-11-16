@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { db, pages } from './db/index.ts';
+import { sanitizeRichText } from './rich-text.ts';
 
 export const ABOUT_SLUG = 'about';
 
@@ -15,15 +16,17 @@ Create an account, fill in your profile, and mark your location so classmates ca
 /** The "about" page from the database, or the built-in text before an admin edits it. */
 export async function getAboutPage() {
 	const page = (await db.select().from(pages).where(eq(pages.slug, ABOUT_SLUG)))[0];
-	return page ?? { slug: ABOUT_SLUG, ...defaultAbout, updatedAt: null };
+	const about = page ?? { ...defaultAbout, slug: ABOUT_SLUG, updatedAt: null };
+	return { ...about, content: sanitizeRichText(about.content) };
 }
 
 export async function saveAboutPage(title: string, content: string) {
+	const safe = sanitizeRichText(content);
 	await db
 		.insert(pages)
-		.values({ slug: ABOUT_SLUG, title, content })
+		.values({ slug: ABOUT_SLUG, title, content: safe })
 		.onConflictDoUpdate({
 			target: pages.slug,
-			set: { title, content, updatedAt: new Date() }
+			set: { title, content: safe, updatedAt: new Date() }
 		});
 }

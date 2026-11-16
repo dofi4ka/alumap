@@ -1,5 +1,6 @@
 import { desc, eq, or } from 'drizzle-orm';
 import { db, projects } from '#lib/server/db/index.ts';
+import { richTextPreview } from '#lib/server/rich-text.ts';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -16,8 +17,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.from(projects)
 		.where(or(eq(projects.status, 'published'), eq(projects.ownerId, me.id)))
 		.orderBy(desc(projects.createdAt), desc(projects.id));
+	const withPreview = rows.map((p) => ({ ...p, description: richTextPreview(p.description) }));
 	return {
-		published: rows.filter((p) => p.status === 'published'),
-		mine: rows.filter((p) => p.status === 'pending')
+		published: withPreview.filter((p) => p.status === 'published'),
+		mine: withPreview.filter((p) => p.status === 'pending')
 	};
 };

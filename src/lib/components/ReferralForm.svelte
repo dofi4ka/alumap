@@ -38,9 +38,6 @@
 			autocomplete="off"
 			required
 		/>
-		<p class="mt-1 text-xs text-zinc-500">
-			The link is never shown to visitors until they press Copy. Copy counts are unique per visitor.
-		</p>
 	</div>
 	<FormActions onCancel={close} label={referral ? 'Save' : 'Add referral'} />
 </form>
