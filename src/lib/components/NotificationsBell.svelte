@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { Bell, MapPin } from '@lucide/svelte';
+	import { Bell, MapPin, UserRound } from '@lucide/svelte';
 	import Modal from './Modal.svelte';
 	import { formatDay } from '#lib/format.ts';
 
 	type Item = {
 		id: number;
+		kind: string;
 		message: string;
 		actorNanoId: string | null;
 		eventNanoId: string | null;
@@ -89,16 +90,32 @@
 			{#each items as n (n.id)}
 				<li class="flex gap-3 rounded-xl px-1 py-3 {n.wasUnread ? 'bg-brand-50/50' : ''}">
 					<span class="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700">
-						<MapPin size={17} />
+						{#if n.kind === 'profile'}
+							<UserRound size={17} />
+						{:else}
+							<MapPin size={17} />
+						{/if}
 					</span>
 					<div class="min-w-0 flex-1">
 						<p class="text-sm leading-snug text-zinc-800">{n.message}</p>
 						<p class="mt-0.5 text-xs text-zinc-400">
-							{timeAgo(n.createdAt)}
-							{#if n.nearCityName}· near {n.nearCityName}{/if}
+							{#if n.kind === 'profile'}
+								Profile reminder
+							{:else}
+								{timeAgo(n.createdAt)}
+								{#if n.nearCityName}· near {n.nearCityName}{/if}
+							{/if}
 						</p>
 					</div>
-					{#if n.actorNanoId || n.eventNanoId}
+					{#if n.kind === 'profile'}
+						<a
+							class="shrink-0 self-center text-sm font-medium text-brand-700 hover:underline"
+							href="/profile"
+							onclick={() => (open = false)}
+						>
+							Complete
+						</a>
+					{:else if n.actorNanoId || n.eventNanoId}
 						<a
 							class="shrink-0 self-center text-sm font-medium text-brand-700 hover:underline"
 							href={n.actorNanoId ? `/u/${n.actorNanoId}` : `/events/${n.eventNanoId}`}

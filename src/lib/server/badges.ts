@@ -254,6 +254,25 @@ export async function startBadgeGranting() {
 		}, 60_000);
 }
 
+/** Whether the user currently holds a badge, ignoring ones an admin took away. */
+export async function hasBadge(userId: number, slug: string) {
+	const rows = await db
+		.select({ slug: badges.slug })
+		.from(userBadges)
+		.innerJoin(badges, eq(badges.id, userBadges.badgeId))
+		.where(
+			and(
+				eq(userBadges.userId, userId),
+				eq(badges.slug, slug),
+				eq(userBadges.removed, false)
+			)
+		)
+		.limit(1);
+	return rows.length > 0;
+}
+
+export const hasProfilePro = (userId: number) => hasBadge(userId, 'profile-pro');
+
 /** Admin actions: giving a badge clears the "removed" mark, taking it away sets it. */
 export async function giveBadge(userId: number, badgeId: number) {
 	await db
