@@ -1,13 +1,20 @@
-import { sql } from 'drizzle-orm';
-import { index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import {
+	bigint,
+	boolean,
+	doublePrecision,
+	index,
+	integer,
+	pgTable,
+	primaryKey,
+	serial,
+	text,
+	timestamp
+} from 'drizzle-orm/pg-core';
 
-const createdAt = () =>
-	integer({ mode: 'timestamp' })
-		.notNull()
-		.default(sql`(unixepoch())`);
+const createdAt = () => timestamp({ withTimezone: true }).notNull().defaultNow();
 
-export const users = sqliteTable('users', {
-	id: integer().primaryKey(),
+export const users = pgTable('users', {
+	id: serial().primaryKey(),
 	nanoId: text().notNull().unique(),
 
 	email: text().notNull().unique(),
@@ -23,28 +30,28 @@ export const users = sqliteTable('users', {
 	/** YYYY-MM-DD */
 	birthday: text(),
 
-	telegramId: integer().unique(),
+	telegramId: bigint({ mode: 'number' }).unique(),
 	telegramUsername: text(),
 	contactEmail: text(),
 	contactPhone: text(),
 	website: text(),
 
 	locationName: text(),
-	locationLat: real(),
-	locationLng: real(),
-	showLocation: integer({ mode: 'boolean' }).notNull().default(false),
+	locationLat: doublePrecision(),
+	locationLng: doublePrecision(),
+	showLocation: boolean().notNull().default(false),
 
-	isApproved: integer({ mode: 'boolean' }).notNull().default(false),
-	isBanned: integer({ mode: 'boolean' }).notNull().default(false),
-	isAdmin: integer({ mode: 'boolean' }).notNull().default(false),
+	isApproved: boolean().notNull().default(false),
+	isBanned: boolean().notNull().default(false),
+	isAdmin: boolean().notNull().default(false),
 
 	createdAt: createdAt()
 });
 
-export const experiences = sqliteTable(
+export const experiences = pgTable(
 	'experiences',
 	{
-		id: integer().primaryKey(),
+		id: serial().primaryKey(),
 		userId: integer()
 			.notNull()
 			.references(() => users.id, { onDelete: 'cascade' }),
@@ -64,7 +71,7 @@ export const experiences = sqliteTable(
 	(t) => [index('experiences_user_idx').on(t.userId)]
 );
 
-export const skills = sqliteTable(
+export const skills = pgTable(
 	'skills',
 	{
 		userId: integer()
@@ -75,10 +82,10 @@ export const skills = sqliteTable(
 	(t) => [primaryKey({ columns: [t.userId, t.name] })]
 );
 
-export const events = sqliteTable(
+export const events = pgTable(
 	'events',
 	{
-		id: integer().primaryKey(),
+		id: serial().primaryKey(),
 		nanoId: text().notNull().unique(),
 		ownerId: integer()
 			.notNull()
@@ -94,8 +101,8 @@ export const events = sqliteTable(
 
 		locationName: text().notNull(),
 		address: text(),
-		locationLat: real().notNull(),
-		locationLng: real().notNull(),
+		locationLat: doublePrecision().notNull(),
+		locationLng: doublePrecision().notNull(),
 
 		status: text({ enum: ['pending', 'published'] })
 			.notNull()
@@ -106,7 +113,7 @@ export const events = sqliteTable(
 	(t) => [index('events_status_idx').on(t.status, t.startsAt)]
 );
 
-export const eventParticipants = sqliteTable(
+export const eventParticipants = pgTable(
 	'event_participants',
 	{
 		eventId: integer()
@@ -120,10 +127,10 @@ export const eventParticipants = sqliteTable(
 	(t) => [primaryKey({ columns: [t.eventId, t.userId] })]
 );
 
-export const projects = sqliteTable(
+export const projects = pgTable(
 	'projects',
 	{
-		id: integer().primaryKey(),
+		id: serial().primaryKey(),
 		nanoId: text().notNull().unique(),
 		ownerId: integer()
 			.notNull()
@@ -147,7 +154,7 @@ export const projects = sqliteTable(
 );
 
 /** Co-organizers of events; the main organizer is `events.owner_id` and is not listed here. */
-export const eventOrganizers = sqliteTable(
+export const eventOrganizers = pgTable(
 	'event_organizers',
 	{
 		eventId: integer()
@@ -160,18 +167,18 @@ export const eventOrganizers = sqliteTable(
 	(t) => [primaryKey({ columns: [t.eventId, t.userId] })]
 );
 
-export const sessions = sqliteTable('sessions', {
+export const sessions = pgTable('sessions', {
 	/** sha256 of the cookie token */
 	id: text().primaryKey(),
 	userId: integer()
 		.notNull()
 		.references(() => users.id, { onDelete: 'cascade' }),
-	expiresAt: integer({ mode: 'timestamp' }).notNull()
+	expiresAt: timestamp({ withTimezone: true }).notNull()
 });
 
 /** Registrations waiting for email code confirmation */
-export const pendingRegistrations = sqliteTable('pending_registrations', {
-	id: integer().primaryKey(),
+export const pendingRegistrations = pgTable('pending_registrations', {
+	id: serial().primaryKey(),
 	email: text().notNull().unique(),
 	codeHash: text().notNull(),
 	attempts: integer().notNull().default(0),
@@ -179,20 +186,20 @@ export const pendingRegistrations = sqliteTable('pending_registrations', {
 	firstName: text().notNull(),
 	lastName: text().notNull(),
 	graduationYear: integer(),
-	expiresAt: integer({ mode: 'timestamp' }).notNull()
+	expiresAt: timestamp({ withTimezone: true }).notNull()
 });
 
 /** One-time tokens for linking telegram account via bot deep link */
-export const telegramLinkTokens = sqliteTable('telegram_link_tokens', {
+export const telegramLinkTokens = pgTable('telegram_link_tokens', {
 	token: text().primaryKey(),
 	userId: integer()
 		.notNull()
 		.references(() => users.id, { onDelete: 'cascade' }),
-	expiresAt: integer({ mode: 'timestamp' }).notNull()
+	expiresAt: timestamp({ withTimezone: true }).notNull()
 });
 
-export const badges = sqliteTable('badges', {
-	id: integer().primaryKey(),
+export const badges = pgTable('badges', {
+	id: serial().primaryKey(),
 	/** nanoid for badges created by admins, readable slug for built-in ones */
 	slug: text().notNull().unique(),
 	name: text().notNull(),
@@ -203,7 +210,7 @@ export const badges = sqliteTable('badges', {
 	createdAt: createdAt()
 });
 
-export const userBadges = sqliteTable(
+export const userBadges = pgTable(
 	'user_badges',
 	{
 		userId: integer()
@@ -213,14 +220,23 @@ export const userBadges = sqliteTable(
 			.notNull()
 			.references(() => badges.id, { onDelete: 'cascade' }),
 		/** taken away by an admin: the row stays so automatic granting doesn't give it back */
-		removed: integer({ mode: 'boolean' }).notNull().default(false),
+		removed: boolean().notNull().default(false),
 		grantedAt: createdAt()
 	},
 	(t) => [primaryKey({ columns: [t.userId, t.badgeId] })]
 );
+
+/** Static content pages like "about", editable by admins. */
+export const pages = pgTable('pages', {
+	slug: text().primaryKey(),
+	title: text().notNull(),
+	content: text().notNull().default(''),
+	updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow()
+});
 
 export type User = typeof users.$inferSelect;
 export type Event = typeof events.$inferSelect;
 export type Experience = typeof experiences.$inferSelect;
 export type Badge = typeof badges.$inferSelect;
 export type Project = typeof projects.$inferSelect;
+export type Page = typeof pages.$inferSelect;

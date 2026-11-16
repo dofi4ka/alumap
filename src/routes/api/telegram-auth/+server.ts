@@ -11,9 +11,9 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 	const telegramId = typeof initData === 'string' ? validateInitData(initData) : null;
 	if (!telegramId) error(400, 'Invalid init data');
 
-	const user = db.select().from(users).where(eq(users.telegramId, telegramId)).get();
+	const user = (await db.select().from(users).where(eq(users.telegramId, telegramId)))[0];
 	if (!user) return json({ ok: false });
 
-	createSession(cookies, user.id);
+	await createSession(cookies, user.id);
 	return json({ ok: true });
 };

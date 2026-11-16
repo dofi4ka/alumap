@@ -2,9 +2,9 @@ import { desc, eq, or } from 'drizzle-orm';
 import { db, projects } from '#lib/server/db/index.ts';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = async ({ locals }) => {
 	const me = locals.user!;
-	const rows = db
+	const rows = await db
 		.select({
 			nanoId: projects.nanoId,
 			title: projects.title,
@@ -15,8 +15,7 @@ export const load: PageServerLoad = ({ locals }) => {
 		})
 		.from(projects)
 		.where(or(eq(projects.status, 'published'), eq(projects.ownerId, me.id)))
-		.orderBy(desc(projects.createdAt), desc(projects.id))
-		.all();
+		.orderBy(desc(projects.createdAt), desc(projects.id));
 	return {
 		published: rows.filter((p) => p.status === 'published'),
 		mine: rows.filter((p) => p.status === 'pending')

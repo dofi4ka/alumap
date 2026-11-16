@@ -99,8 +99,8 @@ const builtIn: BadgeDefinition[] = [
 export const builtInSlugs = new Set(builtIn.map((b) => b.slug));
 
 /** Inserts missing built-in badges; existing ones are left as admins edited them. */
-export function seedBadges() {
-	for (const b of builtIn) db.insert(badges).values(b).onConflictDoNothing().run();
+export async function seedBadges() {
+	await db.insert(badges).values(builtIn).onConflictDoNothing();
 }
 
 /** Thresholds of countable badges, shared by granting and progress. */
@@ -114,11 +114,11 @@ const targets = {
 
 /** Number of filled profile parts out of 8, for user row `u` */
 const profileParts = sql`(
-	(u.avatar_id is not null) + (u.headline is not null) + (u.bio is not null)
-	+ (u.location_name is not null) + (u.birthday is not null)
-	+ (coalesce(u.telegram_username, u.contact_email, u.contact_phone, u.website) is not null)
-	+ exists (select 1 from experiences e where e.user_id = u.id)
-	+ exists (select 1 from skills s where s.user_id = u.id)
+	(u.avatar_id is not null)::int + (u.headline is not null)::int + (u.bio is not null)::int
+	+ (u.location_name is not null)::int + (u.birthday is not null)::int
+	+ (coalesce(u.telegram_username, u.contact_email, u.contact_phone, u.website) is not null)::int
+	+ (exists (select 1 from experiences e where e.user_id = u.id))::int
+	+ (exists (select 1 from skills s where s.user_id = u.id))::int
 )`;
 
 /** (event_id, user_id) of everyone who organized an event: the main organizer and co-organizers */
@@ -143,10 +143,10 @@ const criteria: Record<string, (now: string, badgeId: number) => SQL> = {
 	// whoever shares the location while fewer than 100 pioneers were granted (removed ones count too)
 	pioneer: (_, badgeId) => sql`
 		select id as user_id from users
-		where show_location = 1 and location_lat is not null
+		where show_location = true and location_lat is not null
 			and id not in (select user_id from user_badges where badge_id = ${badgeId})
 		order by id
-		limit max(0, 100 - (select count(*) from user_badges where badge_id = ${badgeId}))`,
+		limit greatest(0, 100 - (select count(*)::int from user_badges where badge_id = ${badgeId}))`,
 
 	// organizers of the first published event of every city
 	'founding-host': () => sql`
@@ -181,7 +181,7 @@ const criteria: Record<string, (now: string, badgeId: number) => SQL> = {
 
 	// must stay last: counts badges granted above
 	'badge-collector': () => sql`
-		select user_id from user_badges where removed = 0
+		select user_id from user_badges where removed = false
 		group by user_id having count(*) >= ${targets['badge-collector']}`
 };
 
@@ -189,37 +189,50 @@ const criteria: Record<string, (now: string, badgeId: number) => SQL> = {
  * Gives automatic badges to everyone who deserves them and doesn't have them yet.
  * A row removed by an admin still exists, so `on conflict do nothing` keeps it removed.
  */
-export function grantAutoBadges() {
+export async function grantAutoBadges() {
 	const now = nowString();
-	const ids = new Map(db.select({ id: badges.id, slug: badges.slug }).from(badges).all().map((b) => [b.slug, b.id]));
-	db.transaction((tx) => {
+	const rows = await db.select({ id: badges.id, slug: badges.slug }).from(badges);
+	const ids = new Map(rows.map((b) => [b.slug, b.id]));
+	await db.transaction(async (tx) => {
 		for (const [slug, query] of Object.entries(criteria)) {
 			const badgeId = ids.get(slug);
 			if (!badgeId) continue;
-			tx.run(sql`
+			await tx.execute(sql`
 				insert into user_badges (user_id, badge_id)
-				select user_id, ${badgeId} from (${query(now, badgeId)}) where true
-				on conflict do nothing`); // "where true" lets sqlite parse "on conflict" after a select
+				select user_id, ${badgeId} from (${query(now, badgeId)}) as deserved
+				on conflict do nothing`);
 		}
 	});
 }
 
 /** Progress of one user towards countable badges, by slug. Same rules as the criteria above. */
-export function badgeProgress(userId: number): Record<string, { current: number; target: number }> {
+export async function badgeProgress(
+	userId: number
+): Promise<Record<string, { current: number; target: number }>> {
 	const now = nowString();
-	const value = (query: SQL) => Number(db.get<{ v: number | null }>(sql`select (${query}) as v`)?.v ?? 0);
-	const current: Record<keyof typeof targets, number> = {
-		'profile-pro': value(sql`select ${profileParts} from users u where u.id = ${userId}`),
-		networker: value(sql`
+	const value = async (query: SQL) => {
+		const [row] = await db.execute<{ v: number | null }>(sql`select (${query}) as v`);
+		return Number(row?.v ?? 0);
+	};
+	const [profilePro, networker, hostWithTheMost, rainmaker, badgeCollector] = await Promise.all([
+		value(sql`select ${profileParts} from users u where u.id = ${userId}`),
+		value(sql`
 			select count(*) from event_participants p join events e on e.id = p.event_id
 			where p.user_id = ${userId} and e.status = 'published' and e.starts_at <= ${now}`),
-		'host-with-the-most': value(sql`
+		value(sql`
 			select count(distinct e.location_name) from ${organizers} o join events e on e.id = o.event_id
 			where o.user_id = ${userId} and e.status = 'published' and e.starts_at <= ${now}`),
-		rainmaker: value(sql`
+		value(sql`
 			select max(${attendees}) from ${organizers} o join events e on e.id = o.event_id
 			where o.user_id = ${userId} and e.status = 'published'`),
-		'badge-collector': value(sql`select count(*) from user_badges where user_id = ${userId} and removed = 0`)
+		value(sql`select count(*) from user_badges where user_id = ${userId} and removed = false`)
+	]);
+	const current: Record<keyof typeof targets, number> = {
+		'profile-pro': profilePro,
+		networker,
+		'host-with-the-most': hostWithTheMost,
+		rainmaker,
+		'badge-collector': badgeCollector
 	};
 	return Object.fromEntries(
 		Object.entries(targets).map(([slug, target]) => [
@@ -229,27 +242,30 @@ export function badgeProgress(userId: number): Record<string, { current: number;
 	);
 }
 
-export function startBadgeGranting() {
-	seedBadges();
-	grantAutoBadges();
+export async function startBadgeGranting() {
+	await seedBadges();
+	await grantAutoBadges();
 	// time based criteria (events that started) need a periodic check
 	const g = globalThis as { __alumapBadgeTimer?: ReturnType<typeof setInterval> };
-	if (!g.__alumapBadgeTimer) g.__alumapBadgeTimer = setInterval(() => grantAutoBadges(), 60_000);
+	if (!g.__alumapBadgeTimer)
+		g.__alumapBadgeTimer = setInterval(() => {
+			grantAutoBadges().catch((err) => console.error('[badges]', err));
+		}, 60_000);
 }
 
 /** Admin actions: giving a badge clears the "removed" mark, taking it away sets it. */
-export function giveBadge(userId: number, badgeId: number) {
-	db.insert(userBadges)
+export async function giveBadge(userId: number, badgeId: number) {
+	await db
+		.insert(userBadges)
 		.values({ userId, badgeId })
-		.onConflictDoUpdate({ target: [userBadges.userId, userBadges.badgeId], set: { removed: false } })
-		.run();
+		.onConflictDoUpdate({ target: [userBadges.userId, userBadges.badgeId], set: { removed: false } });
 }
 
-export function removeBadge(userId: number, badgeId: number) {
-	db.update(userBadges)
+export async function removeBadge(userId: number, badgeId: number) {
+	await db
+		.update(userBadges)
 		.set({ removed: true })
-		.where(and(eq(userBadges.userId, userId), eq(userBadges.badgeId, badgeId)))
-		.run();
+		.where(and(eq(userBadges.userId, userId), eq(userBadges.badgeId, badgeId)));
 }
 
 /** Downloads icon markup from iconify by its name, e.g. "mdi:trophy". Null if there is no such icon. */

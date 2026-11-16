@@ -1,11 +1,11 @@
-import { and, count, desc, eq, ne, or } from 'drizzle-orm';
+import { desc, eq, or, sql } from 'drizzle-orm';
 import { db, eventParticipants, events } from '#lib/server/db/index.ts';
 import { isPastEvent } from '#lib/format.ts';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = async ({ locals }) => {
 	const me = locals.user!;
-	const rows = db
+	const rows = await db
 		.select({
 			nanoId: events.nanoId,
 			title: events.title,
@@ -15,14 +15,13 @@ export const load: PageServerLoad = ({ locals }) => {
 			cost: events.cost,
 			status: events.status,
 			ownerId: events.ownerId,
-			participants: count(eventParticipants.userId)
+			participants: sql<number>`count(${eventParticipants.userId})::int`
 		})
 		.from(events)
 		.leftJoin(eventParticipants, eq(eventParticipants.eventId, events.id))
 		.where(or(eq(events.status, 'published'), eq(events.ownerId, me.id)))
 		.groupBy(events.id)
-		.orderBy(desc(events.startsAt))
-		.all();
+		.orderBy(desc(events.startsAt));
 
 	const published = rows.filter((e) => e.status === 'published');
 	return {

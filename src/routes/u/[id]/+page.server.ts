@@ -11,43 +11,53 @@ import { createLinkToken, getBotUsername } from '#lib/server/telegram.ts';
 import type { Actions, PageServerLoad, RequestEvent } from './$types';
 
 /** All badges, earned first (gold first), each with the user's progress where it is countable. */
-function userBadgeList(userId: number) {
-	const progress = badgeProgress(userId);
-	return db
-		.select({
-			id: badges.id,
-			slug: badges.slug,
-			name: badges.name,
-			description: badges.description,
-			rarity: badges.rarity,
-			svg: badges.svg,
-			earnedAt: userBadges.grantedAt
-		})
-		.from(badges)
-		.leftJoin(
-			userBadges,
-			and(eq(userBadges.badgeId, badges.id), eq(userBadges.userId, userId), eq(userBadges.removed, false))
-		)
-		.orderBy(
-			sql`${userBadges.grantedAt} is null`,
-			sql`case ${badges.rarity} when 'gold' then 0 when 'silver' then 1 else 2 end`,
-			asc(badges.id)
-		)
-		.all()
-		.map((b) => ({ ...b, progress: progress[b.slug] ?? null }));
+async function userBadgeList(userId: number) {
+	const progress = await badgeProgress(userId);
+	return (
+		await db
+			.select({
+				id: badges.id,
+				slug: badges.slug,
+				name: badges.name,
+				description: badges.description,
+				rarity: badges.rarity,
+				svg: badges.svg,
+				earnedAt: userBadges.grantedAt
+			})
+			.from(badges)
+			.leftJoin(
+				userBadges,
+				and(eq(userBadges.badgeId, badges.id), eq(userBadges.userId, userId), eq(userBadges.removed, false))
+			)
+			.orderBy(
+				sql`${userBadges.grantedAt} is null`,
+				sql`case ${badges.rarity} when 'gold' then 0 when 'silver' then 1 else 2 end`,
+				asc(badges.id)
+			)
+	).map((b) => ({ ...b, progress: progress[b.slug] ?? null }));
 }
 
-function getTarget(id: string) {
-	const user = db.select().from(users).where(eq(users.nanoId, id)).get();
+async function getTarget(id: string) {
+	const user = (await db.select().from(users).where(eq(users.nanoId, id)))[0];
 	if (!user) error(404, 'User not found');
 	return user;
 }
 
-export const load: PageServerLoad = ({ params, locals }) => {
+export const load: PageServerLoad = async ({ params, locals }) => {
 	const me = locals.user!;
-	const u = getTarget(params.id);
+	const u = await getTarget(params.id);
 	const isSelf = u.id === me.id;
 	if (!isSelf && !me.isAdmin && (!u.isApproved || u.isBanned)) error(404, 'User not found');
+
+	const [userExperiences, badgeList, skillRows] = await Promise.all([
+		db
+			.select()
+			.from(experiences)
+			.where(eq(experiences.userId, u.id))
+			.orderBy(sql`${experiences.endDate} is not null`, desc(experiences.endDate), desc(experiences.startDate)),
+		userBadgeList(u.id),
+		db.select({ name: skills.name }).from(skills).where(eq(skills.userId, u.id)).orderBy(asc(skills.name))
+	]);
 
 	return {
 		profile: {
@@ -75,20 +85,9 @@ export const load: PageServerLoad = ({ params, locals }) => {
 			isBanned: u.isBanned,
 			isAdmin: u.isAdmin
 		},
-		experiences: db
-			.select()
-			.from(experiences)
-			.where(eq(experiences.userId, u.id))
-			.orderBy(sql`${experiences.endDate} is not null`, desc(experiences.endDate), desc(experiences.startDate))
-			.all(),
-		badges: userBadgeList(u.id),
-		skills: db
-			.select({ name: skills.name })
-			.from(skills)
-			.where(eq(skills.userId, u.id))
-			.orderBy(asc(skills.name))
-			.all()
-			.map((s) => s.name),
+		experiences: userExperiences,
+		badges: badgeList,
+		skills: skillRows.map((s) => s.name),
 		isSelf,
 		canEdit: isSelf || me.isAdmin,
 		viewerIsAdmin: me.isAdmin,
@@ -97,27 +96,28 @@ export const load: PageServerLoad = ({ params, locals }) => {
 };
 
 /** Resolves the edited user and checks that the current user may edit them. */
-function editable({ params, locals }: RequestEvent): User {
+async function editable({ params, locals }: RequestEvent): Promise<User> {
 	const me = locals.user!;
-	const target = getTarget(params.id);
+	const target = await getTarget(params.id);
 	if (target.id !== me.id && !me.isAdmin) error(403, 'Forbidden');
 	return target;
 }
 
-function adminOnly({ params, locals }: RequestEvent): User {
+async function adminOnly({ params, locals }: RequestEvent): Promise<User> {
 	if (!locals.user!.isAdmin) error(403, 'Forbidden');
 	return getTarget(params.id);
 }
 
-const update = (id: number, values: Partial<User>) =>
-	db.update(users).set(values).where(eq(users.id, id)).run();
+const update = async (id: number, values: Partial<User>) => {
+	await db.update(users).set(values).where(eq(users.id, id));
+};
 
 const normalizeUrl = (url: string | null) =>
 	url && !/^https?:\/\//i.test(url) ? `https://${url}` : url;
 
 export const actions: Actions = {
 	basic: async (event) => {
-		const target = editable(event);
+		const target = await editable(event);
 		const fd = await event.request.formData();
 		const firstName = str(fd, 'firstName', 60);
 		const lastName = str(fd, 'lastName', 60);
@@ -134,7 +134,7 @@ export const actions: Actions = {
 		}
 
 		const loc = location(fd);
-		update(target.id, {
+		await update(target.id, {
 			firstName,
 			lastName,
 			graduationYear,
@@ -152,17 +152,17 @@ export const actions: Actions = {
 	},
 
 	about: async (event) => {
-		const target = editable(event);
-		update(target.id, { bio: str(await event.request.formData(), 'bio', 3000) });
+		const target = await editable(event);
+		await update(target.id, { bio: str(await event.request.formData(), 'bio', 3000) });
 	},
 
 	avatar: async (event) => {
-		const target = editable(event);
+		const target = await editable(event);
 		const fd = await event.request.formData();
 		try {
 			const avatarId = await saveImage(fd.get('avatar'), 'avatar');
 			if (!avatarId) return fail(400, { error: 'Choose an image' });
-			update(target.id, { avatarId });
+			await update(target.id, { avatarId });
 			await deleteImage(target.avatarId);
 		} catch (e) {
 			return fail(400, { error: (e as Error).message });
@@ -170,13 +170,13 @@ export const actions: Actions = {
 	},
 
 	removeAvatar: async (event) => {
-		const target = editable(event);
-		update(target.id, { avatarId: null });
+		const target = await editable(event);
+		await update(target.id, { avatarId: null });
 		await deleteImage(target.avatarId);
 	},
 
 	saveExperience: async (event) => {
-		const target = editable(event);
+		const target = await editable(event);
 		const fd = await event.request.formData();
 		const id = int(fd, 'id');
 		const values = {
@@ -199,34 +199,34 @@ export const actions: Actions = {
 
 		const row = { ...values, title: values.title, organization: values.organization, startDate: values.startDate };
 		if (id) {
-			db.update(experiences)
+			await db
+				.update(experiences)
 				.set(row)
-				.where(and(eq(experiences.id, id), eq(experiences.userId, target.id)))
-				.run();
+				.where(and(eq(experiences.id, id), eq(experiences.userId, target.id)));
 		} else {
-			db.insert(experiences).values({ ...row, userId: target.id }).run();
+			await db.insert(experiences).values({ ...row, userId: target.id });
 		}
 	},
 
 	deleteExperience: async (event) => {
-		const target = editable(event);
+		const target = await editable(event);
 		const id = int(await event.request.formData(), 'id');
-		if (id) db.delete(experiences).where(and(eq(experiences.id, id), eq(experiences.userId, target.id))).run();
+		if (id) await db.delete(experiences).where(and(eq(experiences.id, id), eq(experiences.userId, target.id)));
 	},
 
 	addSkill: async (event) => {
-		const target = editable(event);
+		const target = await editable(event);
 		const name = str(await event.request.formData(), 'name', 40);
 		if (!name) return;
 		const count = await db.$count(skills, eq(skills.userId, target.id));
 		if (count >= 50) return fail(400, { error: 'Too many skills' });
-		db.insert(skills).values({ userId: target.id, name }).onConflictDoNothing().run();
+		await db.insert(skills).values({ userId: target.id, name }).onConflictDoNothing();
 	},
 
 	removeSkill: async (event) => {
-		const target = editable(event);
+		const target = await editable(event);
 		const name = str(await event.request.formData(), 'name', 40);
-		if (name) db.delete(skills).where(and(eq(skills.userId, target.id), eq(skills.name, name))).run();
+		if (name) await db.delete(skills).where(and(eq(skills.userId, target.id), eq(skills.name, name)));
 	},
 
 	connectTelegram: async ({ locals, params }) => {
@@ -234,7 +234,8 @@ export const actions: Actions = {
 		if (me.nanoId !== params.id) error(403, 'Forbidden');
 		const bot = getBotUsername();
 		if (!bot) return fail(400, { error: 'Telegram bot is not available right now' });
-		redirect(303, `https://t.me/${bot}?start=${createLinkToken(me.id)}`, { external: ['https://t.me'] });
+		const token = await createLinkToken(me.id);
+		redirect(303, `https://t.me/${bot}?start=${token}`, { external: ['https://t.me'] });
 	},
 
 	changePassword: async ({ request, locals, params }) => {
@@ -246,32 +247,32 @@ export const actions: Actions = {
 			return fail(400, { error: 'Current password is wrong' });
 		if (password.length < 8) return fail(400, { error: 'New password must be at least 8 characters' });
 		if (password !== fd.get('newPasswordRepeat')) return fail(400, { error: "New passwords don't match" });
-		update(me.id, { passwordHash: await hashPassword(password) });
+		await update(me.id, { passwordHash: await hashPassword(password) });
 		return { passwordChanged: true };
 	},
 
 	disconnectTelegram: async (event) => {
-		const target = editable(event);
-		update(target.id, { telegramId: null });
+		const target = await editable(event);
+		await update(target.id, { telegramId: null });
 	},
 
-	approve: (event) => {
-		approveUser(adminOnly(event).id);
+	approve: async (event) => {
+		await approveUser((await adminOnly(event)).id);
 	},
 	giveBadge: async (event) => {
-		const target = adminOnly(event);
+		const target = await adminOnly(event);
 		const badgeId = int(await event.request.formData(), 'badgeId');
-		if (badgeId) giveBadge(target.id, badgeId);
+		if (badgeId) await giveBadge(target.id, badgeId);
 	},
 	removeBadge: async (event) => {
-		const target = adminOnly(event);
+		const target = await adminOnly(event);
 		const badgeId = int(await event.request.formData(), 'badgeId');
-		if (badgeId) removeBadge(target.id, badgeId);
+		if (badgeId) await removeBadge(target.id, badgeId);
 	},
-	ban: (event) => {
-		setBanned(adminOnly(event).id, true);
+	ban: async (event) => {
+		await setBanned((await adminOnly(event)).id, true);
 	},
-	unban: (event) => {
-		setBanned(adminOnly(event).id, false);
+	unban: async (event) => {
+		await setBanned((await adminOnly(event)).id, false);
 	}
 };

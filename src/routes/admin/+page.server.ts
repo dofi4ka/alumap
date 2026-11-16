@@ -7,6 +7,7 @@ import { builtInSlugs, fetchIconSvg } from '#lib/server/badges.ts';
 import { nanoid } from 'nanoid';
 import { deleteEvent } from '#lib/server/events.ts';
 import { int, oneOf, str } from '#lib/server/forms.ts';
+import { getAboutPage, saveAboutPage } from '#lib/server/pages.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 const userColumns = {
@@ -23,9 +24,9 @@ const userColumns = {
 	createdAt: users.createdAt
 };
 
-export const load: PageServerLoad = () => {
-	const allUsers = db.select(userColumns).from(users).orderBy(desc(users.createdAt)).all();
-	const holders = Map.groupBy(
+export const load: PageServerLoad = async () => {
+	const [allUsers, holderRows, badgeRows, pendingProjects, pendingEvents, about] = await Promise.all([
+		db.select(userColumns).from(users).orderBy(desc(users.createdAt)),
 		db
 			.select({
 				badgeId: userBadges.badgeId,
@@ -39,12 +40,8 @@ export const load: PageServerLoad = () => {
 			.from(userBadges)
 			.innerJoin(users, eq(users.id, userBadges.userId))
 			.where(eq(userBadges.removed, false))
-			.orderBy(asc(userBadges.grantedAt))
-			.all(),
-		(h) => h.badgeId
-	);
-	return {
-		badges: db
+			.orderBy(asc(userBadges.grantedAt)),
+		db
 			.select({
 				id: badges.id,
 				slug: badges.slug,
@@ -54,12 +51,8 @@ export const load: PageServerLoad = () => {
 				svg: badges.svg
 			})
 			.from(badges)
-			.orderBy(asc(badges.id))
-			.all()
-			.map(({ slug, ...b }) => ({ ...b, builtIn: builtInSlugs.has(slug), holders: holders.get(b.id) ?? [] })),
-		pendingUsers: allUsers.filter((u) => !u.isApproved && !u.isBanned),
-		users: allUsers.filter((u) => u.isApproved || u.isBanned),
-		pendingProjects: db
+			.orderBy(asc(badges.id)),
+		db
 			.select({
 				id: projects.id,
 				nanoId: projects.nanoId,
@@ -70,9 +63,8 @@ export const load: PageServerLoad = () => {
 			.from(projects)
 			.innerJoin(users, eq(users.id, projects.ownerId))
 			.where(eq(projects.status, 'pending'))
-			.orderBy(asc(projects.createdAt))
-			.all(),
-		pendingEvents: db
+			.orderBy(asc(projects.createdAt)),
+		db
 			.select({
 				nanoId: events.nanoId,
 				id: events.id,
@@ -86,8 +78,23 @@ export const load: PageServerLoad = () => {
 			.from(events)
 			.innerJoin(users, eq(users.id, events.ownerId))
 			.where(eq(events.status, 'pending'))
-			.orderBy(asc(events.createdAt))
-			.all()
+			.orderBy(asc(events.createdAt)),
+		getAboutPage()
+	]);
+
+	const holders = Map.groupBy(holderRows, (h) => h.badgeId);
+
+	return {
+		about,
+		badges: badgeRows.map(({ slug, ...b }) => ({
+			...b,
+			builtIn: builtInSlugs.has(slug),
+			holders: holders.get(b.id) ?? []
+		})),
+		pendingUsers: allUsers.filter((u) => !u.isApproved && !u.isBanned),
+		users: allUsers.filter((u) => u.isApproved || u.isBanned),
+		pendingProjects,
+		pendingEvents
 	};
 };
 
@@ -113,37 +120,44 @@ export const actions: Actions = {
 		const svg = icon ? await fetchIconSvg(icon) : undefined;
 		if (svg === null) return fail(400, { error: 'Could not download the icon from iconify, try again' });
 
-		if (badgeId) db.update(badges).set({ name, description, rarity, svg }).where(eq(badges.id, badgeId)).run();
-		else db.insert(badges).values({ slug: nanoid(12), name, description, rarity, svg: svg! }).run();
+		if (badgeId) await db.update(badges).set({ name, description, rarity, svg }).where(eq(badges.id, badgeId));
+		else await db.insert(badges).values({ slug: nanoid(12), name, description, rarity, svg: svg! });
 	},
 	deleteBadge: async ({ request }) => {
-		const badge = db.select().from(badges).where(eq(badges.id, await id(request))).get();
+		const badge = (await db.select().from(badges).where(eq(badges.id, await id(request))))[0];
 		if (!badge || builtInSlugs.has(badge.slug)) return fail(400, { error: 'Built-in badges cannot be deleted' });
-		db.delete(badges).where(eq(badges.id, badge.id)).run();
+		await db.delete(badges).where(eq(badges.id, badge.id));
 	},
 	approveUser: async ({ request }) => {
-		approveUser(await id(request));
+		await approveUser(await id(request));
 	},
 	ban: async ({ request }) => {
-		setBanned(await id(request), true);
+		await setBanned(await id(request), true);
 	},
 	unban: async ({ request }) => {
-		setBanned(await id(request), false);
+		await setBanned(await id(request), false);
 	},
 	publishEvent: async ({ request }) => {
-		publishEvent(await id(request));
+		await publishEvent(await id(request));
 	},
 	publishProject: async ({ request }) => {
-		db.update(projects).set({ status: 'published' }).where(eq(projects.id, await id(request))).run();
+		await db.update(projects).set({ status: 'published' }).where(eq(projects.id, await id(request)));
 	},
 	/** like events, a rejected project is deleted */
 	rejectProject: async ({ request }) => {
-		const project = db.select().from(projects).where(eq(projects.id, await id(request))).get();
+		const project = (await db.select().from(projects).where(eq(projects.id, await id(request))))[0];
 		if (project) await deleteProject(project);
 	},
 	/** there is no "rejected" state: a rejected event is deleted */
 	rejectEvent: async ({ request }) => {
-		const event = db.select().from(events).where(eq(events.id, await id(request))).get();
+		const event = (await db.select().from(events).where(eq(events.id, await id(request))))[0];
 		if (event) await deleteEvent(event);
+	},
+	saveAbout: async ({ request }) => {
+		const fd = await request.formData();
+		const title = str(fd, 'title', 120);
+		const content = str(fd, 'content', 20000);
+		if (!title || !content) return fail(400, { error: 'Fill in title and content' });
+		await saveAboutPage(title, content);
 	}
 };

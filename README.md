@@ -1,17 +1,18 @@
 # Alumap
 
-Map of Innopolis University alumni: SvelteKit + Drizzle (SQLite) + Tailwind 4 + MapLibre + grammY, all in one container.
+Map of Innopolis University alumni: SvelteKit + Drizzle (PostgreSQL) + Tailwind 4 + MapLibre + grammY, deployed as one compose stack.
 
 ## Development
 
 ```sh
 pnpm install
-cp .env.example .env   # SMTP and BOT_TOKEN are optional in dev
+cp .env.example .env
+docker compose up -d db   # PostgreSQL on localhost:5432
 pnpm dev
 ```
 
 Without `SMTP_HOST`, verification codes are printed to the console.
-The database and uploaded images live in `DATA_DIR` (`./data`). Migrations run automatically on start.
+Uploaded images live in `DATA_DIR` (`./data`). Migrations run automatically on start.
 
 After changing `src/lib/server/db/schema.ts` run `pnpm drizzle-kit generate`.
 
@@ -21,7 +22,8 @@ After changing `src/lib/server/db/schema.ts` run `pnpm drizzle-kit generate`.
 docker compose up -d --build
 ```
 
-Put it behind an HTTPS reverse proxy (the Telegram miniapp requires https).
+This starts the app together with PostgreSQL. Set a real `POSTGRES_PASSWORD` in `.env` before deploying.
+Put the app behind an HTTPS reverse proxy (the Telegram miniapp requires https).
 
 ## Admins
 
@@ -32,6 +34,8 @@ docker compose exec alumap node scripts/set-admin.js you@innopolis.university
 ```
 
 ## Migrating from alumap-htmx
+
+The old database is still SQLite, so the import script reads it with Node's built-in `node:sqlite`:
 
 ```sh
 node scripts/import-htmx.js ../alumap-htmx/db.sqlite

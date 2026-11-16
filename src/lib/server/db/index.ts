@@ -1,19 +1,16 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import postgres from 'postgres';
 import { env } from '../env.ts';
 import * as schema from './schema.ts';
 
-fs.mkdirSync(env.dataDir, { recursive: true });
+const client = postgres(env.databaseUrl);
 
-const client = new Database(process.env.DATABASE_PATH || path.join(env.dataDir, 'db.sqlite'));
-client.pragma('journal_mode = WAL');
-client.pragma('foreign_keys = ON');
+export const db = drizzle({ client, schema, casing: 'snake_case' });
 
-export const db = drizzle(client, { schema, casing: 'snake_case' });
-
-migrate(db, { migrationsFolder: 'drizzle' });
+/** Applies pending migrations; awaited by the server's `init` hook before requests are served. */
+export async function migrateDb() {
+	await migrate(db, { migrationsFolder: 'drizzle' });
+}
 
 export * from './schema.ts';

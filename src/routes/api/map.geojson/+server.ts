@@ -20,8 +20,8 @@ const point = (lng: number, lat: number, properties: MapFeatureProps) => ({
 	properties
 });
 
-export const GET: RequestHandler = () => {
-	const people = db
+export const GET: RequestHandler = async () => {
+	const people = await db
 		.select()
 		.from(users)
 		.where(
@@ -32,16 +32,14 @@ export const GET: RequestHandler = () => {
 				isNotNull(users.locationLat),
 				isNotNull(users.locationLng)
 			)
-		)
-		.all();
+		);
 
 	// only upcoming events (with a day of slack, see isPastEvent)
 	const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 16);
-	const upcoming = db
+	const upcoming = await db
 		.select()
 		.from(events)
-		.where(and(eq(events.status, 'published'), gte(events.startsAt, since)))
-		.all();
+		.where(and(eq(events.status, 'published'), gte(events.startsAt, since)));
 
 	const items = [
 		...people.map((u) => ({

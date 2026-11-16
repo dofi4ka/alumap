@@ -1,11 +1,13 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { Handle, ServerInit } from '@sveltejs/kit/hooks';
 import { getSessionUser } from '#lib/server/auth.ts';
+import { migrateDb } from '#lib/server/db/index.ts';
 import { startBot } from '#lib/server/telegram.ts';
 import { grantAutoBadges, startBadgeGranting } from '#lib/server/badges.ts';
 
-export const init: ServerInit = () => {
-	startBadgeGranting();
+export const init: ServerInit = async () => {
+	await migrateDb();
+	await startBadgeGranting();
 	startBot();
 };
 
@@ -17,7 +19,7 @@ const startsWithAny = (path: string, prefixes: string[]) =>
 	prefixes.some((p) => path === p || path.startsWith(p.endsWith('/') ? p : p + '/'));
 
 export const handle: Handle = async ({ event, resolve }) => {
-	const user = getSessionUser(event.cookies);
+	const user = await getSessionUser(event.cookies);
 	event.locals.user = user;
 	const path = event.url.pathname;
 
@@ -45,6 +47,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const response = await resolve(event);
 	// everything that may earn a badge (profile edits, attendance, events) is a form post
-	if (event.request.method === 'POST') grantAutoBadges();
+	if (event.request.method === 'POST') await grantAutoBadges();
 	return response;
 };

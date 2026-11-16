@@ -37,7 +37,7 @@ export function startBot() {
 	bot.command('start', async (ctx) => {
 		const payload = ctx.match?.trim();
 		if (payload?.startsWith('link_')) {
-			const message = linkAccount(payload.slice(5), ctx.from!.id, ctx.from!.username);
+			const message = await linkAccount(payload.slice(5), ctx.from!.id, ctx.from!.username);
 			await ctx.reply(message, { reply_markup: openKeyboard() });
 			return;
 		}
@@ -59,32 +59,32 @@ export function startBot() {
 		.catch((err) => console.error('[telegram] failed to start bot', err));
 }
 
-export function createLinkToken(userId: number) {
+export async function createLinkToken(userId: number) {
 	const token = randomToken();
-	db.insert(telegramLinkTokens)
-		.values({ token, userId, expiresAt: new Date(Date.now() + 15 * 60 * 1000) })
-		.run();
+	await db
+		.insert(telegramLinkTokens)
+		.values({ token, userId, expiresAt: new Date(Date.now() + 15 * 60 * 1000) });
 	return `link_${token}`;
 }
 
-function linkAccount(token: string, telegramId: number, username: string | undefined) {
-	const row = db
-		.select()
-		.from(telegramLinkTokens)
-		.where(and(eq(telegramLinkTokens.token, token), gt(telegramLinkTokens.expiresAt, new Date())))
-		.get();
+async function linkAccount(token: string, telegramId: number, username: string | undefined) {
+	const row = (
+		await db
+			.select()
+			.from(telegramLinkTokens)
+			.where(and(eq(telegramLinkTokens.token, token), gt(telegramLinkTokens.expiresAt, new Date())))
+	)[0];
 	if (!row) return 'This link has expired. Press "Connect Telegram" in your Alumap profile again.';
 
-	db.delete(telegramLinkTokens).where(eq(telegramLinkTokens.userId, row.userId)).run();
-	// a telegram account may be linked to one user only
-	db.update(users)
-		.set({ telegramId: null })
-		.where(eq(users.telegramId, telegramId))
-		.run();
-	db.update(users)
-		.set({ telegramId, telegramUsername: username ?? null })
-		.where(eq(users.id, row.userId))
-		.run();
+	await db.transaction(async (tx) => {
+		await tx.delete(telegramLinkTokens).where(eq(telegramLinkTokens.userId, row.userId));
+		// a telegram account may be linked to one user only
+		await tx.update(users).set({ telegramId: null }).where(eq(users.telegramId, telegramId));
+		await tx
+			.update(users)
+			.set({ telegramId, telegramUsername: username ?? null })
+			.where(eq(users.id, row.userId));
+	});
 	return '✅ Telegram is connected to your Alumap account. Now the miniapp will log you in automatically.';
 }
 

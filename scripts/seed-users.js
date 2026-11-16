@@ -2,8 +2,7 @@
 // Re-running replaces previous demo users (emails ending with @seed.alumap).
 // Usage: node scripts/seed-users.js
 import crypto from 'node:crypto';
-import path from 'node:path';
-import Database from 'better-sqlite3';
+import postgres from 'postgres';
 import bcrypt from 'bcryptjs';
 
 try {
@@ -12,7 +11,11 @@ try {
 	// no .env
 }
 
-const db = new Database(path.join(process.env.DATA_DIR || 'data', 'db.sqlite'));
+if (!process.env.DATABASE_URL) {
+	console.error('DATABASE_URL is not set');
+	process.exit(1);
+}
+const sql = postgres(process.env.DATABASE_URL);
 
 /** [city, lat, lng, how many users] — coordinates exactly as in assets/cities.csv (population lookup), — 20 in Russia (10 of them in Kazan/Innopolis), 20 abroad */
 const places = [
@@ -54,31 +57,23 @@ const nanoId = () =>
 // nobody knows this password, demo users cannot log in
 const passwordHash = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 12);
 
-const insert = db.prepare(`
-	insert into users (nano_id, email, password_hash, first_name, last_name, graduation_year, headline,
-		location_name, location_lat, location_lng, show_location, is_approved)
-	values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`);
-
-db.transaction(() => {
-	const removed = db.prepare(`delete from users where email like '%@seed.alumap'`).run().changes;
+let inserted = 0;
+await sql.begin(async (tx) => {
+	const removed = await tx`delete from users where email like ${'%@seed.alumap'} returning id`;
 	let i = 0;
 	for (const [city, lat, lng, count] of places) {
 		for (let k = 0; k < count; k++, i++) {
 			const first = pick(firstNames, i * 7 + 3);
 			const last = pick(lastNames, i * 5 + 1);
-			insert.run(
-				nanoId(),
-				`demo${i + 1}@seed.alumap`,
-				passwordHash,
-				first,
-				last,
-				i % 4 === 3 ? null : 2016 + (i % 10),
-				`${pick(headlines, i)} at ${pick(companies, i * 3)}`,
-				city,
-				lat,
-				lng
-			);
+			await tx`
+				insert into users (nano_id, email, password_hash, first_name, last_name, graduation_year, headline,
+					location_name, location_lat, location_lng, show_location, is_approved)
+				values (${nanoId()}, ${`demo${i + 1}@seed.alumap`}, ${passwordHash}, ${first}, ${last},
+					${i % 4 === 3 ? null : 2016 + (i % 10)}, ${`${pick(headlines, i)} at ${pick(companies, i * 3)}`},
+					${city}, ${lat}, ${lng}, true, true)`;
+			inserted++;
 		}
 	}
-	console.log(`removed ${removed} old demo users, inserted ${i}`);
-})();
+	console.log(`removed ${removed.length} old demo users, inserted ${inserted}`);
+});
+await sql.end();

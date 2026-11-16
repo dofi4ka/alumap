@@ -4,12 +4,12 @@ import { db, users } from '#lib/server/db/index.ts';
 import type { RequestHandler } from './$types';
 
 /** User search by name, for pickers. Only approved, not banned users. */
-export const GET: RequestHandler = ({ url }) => {
+export const GET: RequestHandler = async ({ url }) => {
 	const q = (url.searchParams.get('q') ?? '').trim().slice(0, 60);
 	if (q.length < 2) return json([]);
 	const pattern = `%${q.replace(/[%_]/g, '')}%`;
 	return json(
-		db
+		await db
 			.select({ id: users.id, nanoId: users.nanoId, firstName: users.firstName, lastName: users.lastName, avatarId: users.avatarId })
 			.from(users)
 			.where(
@@ -20,6 +20,5 @@ export const GET: RequestHandler = ({ url }) => {
 				)
 			)
 			.limit(10)
-			.all()
 	);
 };

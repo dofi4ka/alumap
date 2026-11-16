@@ -6,20 +6,21 @@ import { deleteEvent, getCoOrganizers, getEvent, isOrganizer } from '#lib/server
 import { isPastEvent } from '#lib/format.ts';
 import type { Actions, PageServerLoad, RequestEvent } from './$types';
 
-export const load: PageServerLoad = ({ params, locals }) => {
+export const load: PageServerLoad = async ({ params, locals }) => {
 	const me = locals.user!;
-	const { event, canEdit } = getEvent(params.id, me);
+	const { event, canEdit } = await getEvent(params.id, me);
 
-	const owner = db
-		.select({ id: users.id, nanoId: users.nanoId, firstName: users.firstName, lastName: users.lastName, avatarId: users.avatarId })
-		.from(users)
-		.where(eq(users.id, event.ownerId))
-		.get()!;
+	const owner = (
+		await db
+			.select({ id: users.id, nanoId: users.nanoId, firstName: users.firstName, lastName: users.lastName, avatarId: users.avatarId })
+			.from(users)
+			.where(eq(users.id, event.ownerId))
+	)[0]!;
 	/** the main organizer goes first */
-	const organizers = [owner, ...getCoOrganizers(event.id)];
+	const organizers = [owner, ...(await getCoOrganizers(event.id))];
 	const organizerIds = new Set(organizers.map((o) => o.id));
 
-	const attendees = db
+	const attendees = await db
 		.select({
 			id: users.id,
 			nanoId: users.nanoId,
@@ -31,8 +32,7 @@ export const load: PageServerLoad = ({ params, locals }) => {
 		.from(eventParticipants)
 		.innerJoin(users, eq(users.id, eventParticipants.userId))
 		.where(and(eq(eventParticipants.eventId, event.id), eq(users.isBanned, false)))
-		.orderBy(asc(eventParticipants.createdAt))
-		.all();
+		.orderBy(asc(eventParticipants.createdAt));
 	// organizers are not listed as attendees
 	const participants = attendees.filter((p) => !organizerIds.has(p.id));
 
@@ -48,29 +48,33 @@ export const load: PageServerLoad = ({ params, locals }) => {
 	};
 };
 
-const adminEvent = ({ params, locals }: RequestEvent) => {
+const adminEvent = async ({ params, locals }: RequestEvent) => {
 	if (!locals.user!.isAdmin) error(403, 'Forbidden');
-	return getEvent(params.id, locals.user!).event;
+	return (await getEvent(params.id, locals.user!)).event;
 };
 
 export const actions: Actions = {
-	join: ({ params, locals }) => {
-		const { event } = getEvent(params.id, locals.user!);
-		if (event.status !== 'published' || isPastEvent(event.startsAt) || isOrganizer(event, locals.user!.id))
+	join: async ({ params, locals }) => {
+		const { event } = await getEvent(params.id, locals.user!);
+		if (
+			event.status !== 'published' ||
+			isPastEvent(event.startsAt) ||
+			(await isOrganizer(event, locals.user!.id))
+		)
 			error(400, 'Cannot join this event');
-		db.insert(eventParticipants).values({ eventId: event.id, userId: locals.user!.id }).onConflictDoNothing().run();
+		await db.insert(eventParticipants).values({ eventId: event.id, userId: locals.user!.id }).onConflictDoNothing();
 	},
-	leave: ({ params, locals }) => {
-		const { event } = getEvent(params.id, locals.user!);
-		db.delete(eventParticipants)
-			.where(and(eq(eventParticipants.eventId, event.id), eq(eventParticipants.userId, locals.user!.id)))
-			.run();
+	leave: async ({ params, locals }) => {
+		const { event } = await getEvent(params.id, locals.user!);
+		await db
+			.delete(eventParticipants)
+			.where(and(eq(eventParticipants.eventId, event.id), eq(eventParticipants.userId, locals.user!.id)));
 	},
-	publish: (e) => {
-		publishEvent(adminEvent(e).id);
+	publish: async (e) => {
+		await publishEvent((await adminEvent(e)).id);
 	},
 	delete: async ({ params, locals }) => {
-		const { event, canEdit } = getEvent(params.id, locals.user!);
+		const { event, canEdit } = await getEvent(params.id, locals.user!);
 		if (!canEdit) error(403, 'Forbidden');
 		await deleteEvent(event);
 		redirect(303, '/events');

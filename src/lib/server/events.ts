@@ -7,7 +7,7 @@ import { deleteImage, saveImage } from './images.ts';
 
 /** Deletes the event (attendees cascade) and its picture. */
 export async function deleteEvent(event: Event) {
-	db.delete(events).where(eq(events.id, event.id)).run();
+	await db.delete(events).where(eq(events.id, event.id));
 	await deleteImage(event.imageId);
 }
 
@@ -21,28 +21,30 @@ const personColumns = {
 };
 
 /** Co-organizers of an event (without the main organizer). */
-export const getCoOrganizers = (eventId: number) =>
-	db
+export const getCoOrganizers = async (eventId: number) =>
+	await db
 		.select(personColumns)
 		.from(eventOrganizers)
 		.innerJoin(users, eq(users.id, eventOrganizers.userId))
 		.where(eq(eventOrganizers.eventId, eventId))
-		.orderBy(asc(users.firstName))
-		.all();
+		.orderBy(asc(users.firstName));
 
 /** Main organizer or co-organizer: organizers don't attend their own events. */
-export const isOrganizer = (event: Event, userId: number) =>
-	event.ownerId === userId ||
-	!!db
-		.select({ id: eventOrganizers.userId })
-		.from(eventOrganizers)
-		.where(and(eq(eventOrganizers.eventId, event.id), eq(eventOrganizers.userId, userId)))
-		.get();
+export const isOrganizer = async (event: Event, userId: number) => {
+	if (event.ownerId === userId) return true;
+	const row = (
+		await db
+			.select({ id: eventOrganizers.userId })
+			.from(eventOrganizers)
+			.where(and(eq(eventOrganizers.eventId, event.id), eq(eventOrganizers.userId, userId)))
+	)[0];
+	return !!row;
+};
 
 /** Replaces co-organizers with the given users: only approved, not banned, not the main organizer. */
-function setCoOrganizers(event: Event, userIds: number[]) {
+async function setCoOrganizers(event: Event, userIds: number[]) {
 	const valid = userIds.length
-		? db
+		? await db
 				.select({ id: users.id })
 				.from(users)
 				.where(
@@ -53,22 +55,21 @@ function setCoOrganizers(event: Event, userIds: number[]) {
 						ne(users.id, event.ownerId)
 					)
 				)
-				.all()
 		: [];
-	db.transaction((tx) => {
-		tx.delete(eventOrganizers).where(eq(eventOrganizers.eventId, event.id)).run();
+	await db.transaction(async (tx) => {
+		await tx.delete(eventOrganizers).where(eq(eventOrganizers.eventId, event.id));
 		for (const { id } of valid) {
-			tx.insert(eventOrganizers).values({ eventId: event.id, userId: id }).run();
+			await tx.insert(eventOrganizers).values({ eventId: event.id, userId: id });
 			// organizers are not attendees
-			tx.delete(eventParticipants)
-				.where(and(eq(eventParticipants.eventId, event.id), eq(eventParticipants.userId, id)))
-				.run();
+			await tx
+				.delete(eventParticipants)
+				.where(and(eq(eventParticipants.eventId, event.id), eq(eventParticipants.userId, id)));
 		}
 	});
 }
 
-export function getEvent(nanoId: string, viewer: User) {
-	const event = db.select().from(events).where(eq(events.nanoId, nanoId)).get();
+export async function getEvent(nanoId: string, viewer: User) {
+	const event = (await db.select().from(events).where(eq(events.nanoId, nanoId)))[0];
 	if (!event) error(404, 'Event not found');
 	const canEdit = viewer.isAdmin || event.ownerId === viewer.id;
 	if (event.status !== 'published' && !canEdit) error(404, 'Event not found');
@@ -113,7 +114,7 @@ export async function saveEvent(
 	const coOrganizers = fd.getAll('coOrganizers').map(Number).filter(Number.isInteger);
 
 	if (!event) {
-		const created = db
+		const [created] = await db
 			.insert(events)
 			.values({
 				...values,
@@ -122,14 +123,13 @@ export async function saveEvent(
 				ownerId: user.id,
 				status: user.isAdmin ? 'published' : 'pending'
 			})
-			.returning()
-			.get();
-		setCoOrganizers(created, coOrganizers);
+			.returning();
+		await setCoOrganizers(created, coOrganizers);
 		return created;
 	}
 
 	const removeImage = fd.get('removeImage') === 'on';
-	const updated = db
+	const [updated] = await db
 		.update(events)
 		.set({
 			...values,
@@ -137,9 +137,8 @@ export async function saveEvent(
 			status: user.isAdmin ? event.status : 'pending'
 		})
 		.where(eq(events.id, event.id))
-		.returning()
-		.get();
-	setCoOrganizers(updated, coOrganizers);
+		.returning();
+	await setCoOrganizers(updated, coOrganizers);
 	if (imageId || removeImage) await deleteImage(event.imageId);
 	return updated;
 }

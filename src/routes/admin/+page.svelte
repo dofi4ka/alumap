@@ -11,20 +11,22 @@
 	import { formatEventDate } from '#lib/format.ts';
 	import type { PageProps } from './$types';
 
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps = $props();
 
 	const tabs = $derived([
 		{ id: 'users', label: 'New users to review', count: data.pendingUsers.length, review: true },
 		{ id: 'events', label: 'Events to review', count: data.pendingEvents.length, review: true },
 		{ id: 'projects', label: 'Projects to review', count: data.pendingProjects.length, review: true },
 		{ id: 'all-users', label: 'Users list', count: data.users.length, review: false },
-		{ id: 'badges', label: 'Badges', count: data.badges.length, review: false }
+		{ id: 'badges', label: 'Badges', count: data.badges.length, review: false },
+		{ id: 'about', label: 'About page', count: undefined, review: false }
 	]);
 	const tab = $derived(page.url.searchParams.get('tab') ?? 'users');
 	let filter = $state('');
 	/** badge form popup: 'new', a badge id, or closed */
 	let editingBadge = $state<'new' | number | null>(null);
 	let holdersOf = $state<number | null>(null);
+	let savedAbout = $state(false);
 	const editedBadge = $derived(data.badges.find((b) => b.id === editingBadge) ?? null);
 	const holdersBadge = $derived(data.badges.find((b) => b.id === holdersOf));
 
@@ -167,6 +169,50 @@
 		{/each}
 	</div>
 	<p class="mt-2 text-xs text-zinc-400">Click a badge to edit it. Give or take away badges on a user's profile.</p>
+</section>
+{/if}
+
+{#if tab === 'about'}
+<section class="mb-8">
+	<form
+		method="POST"
+		action="?/saveAbout"
+		use:enhance={submitThen(() => (savedAbout = true))}
+		class="card space-y-4"
+	>
+		<div>
+			<label class="label" for="about-title">Title</label>
+			<input
+				id="about-title"
+				class="input"
+				name="title"
+				value={data.about.title}
+				maxlength="120"
+				required
+				oninput={() => (savedAbout = false)}
+			/>
+		</div>
+		<div>
+			<label class="label" for="about-content">Content</label>
+			<textarea
+				id="about-content"
+				class="input min-h-72"
+				name="content"
+				maxlength="20000"
+				required
+				oninput={() => (savedAbout = false)}>{data.about.content}</textarea
+			>
+			<p class="mt-1 text-xs text-zinc-400">
+				Plain text: line breaks are preserved, blank lines separate paragraphs.
+				<a href="/about" class="underline hover:text-zinc-600">View page</a>
+			</p>
+		</div>
+		{#if form?.error}<p class="error-box">{form.error}</p>{/if}
+		<div class="flex items-center gap-3">
+			<button class="btn-primary">Save</button>
+			<span class="text-sm text-brand-700" aria-live="polite">{savedAbout ? 'Saved' : ''}</span>
+		</div>
+	</form>
 </section>
 {/if}
 

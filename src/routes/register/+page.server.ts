@@ -13,10 +13,10 @@ const MAX_ATTEMPTS = 5;
 
 async function issueCode(email: string) {
 	const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
-	db.update(pendingRegistrations)
+	await db
+		.update(pendingRegistrations)
 		.set({ codeHash: sha256(code), attempts: 0, expiresAt: new Date(Date.now() + CODE_TTL) })
-		.where(eq(pendingRegistrations.email, email))
-		.run();
+		.where(eq(pendingRegistrations.email, email));
 	await sendVerificationCode(email, code);
 }
 
@@ -43,7 +43,7 @@ export const actions: Actions = {
 			if (!graduationYear || graduationYear < 2014 || graduationYear > maxYear)
 				return err(`Graduation year must be between 2014 and ${maxYear}`);
 		}
-		if (db.select({ id: users.id }).from(users).where(eq(users.email, email)).get())
+		if ((await db.select({ id: users.id }).from(users).where(eq(users.email, email)))[0])
 			return err('An account with this email already exists');
 
 		const row = {
@@ -55,10 +55,10 @@ export const actions: Actions = {
 			codeHash: '',
 			expiresAt: new Date()
 		};
-		db.insert(pendingRegistrations)
+		await db
+			.insert(pendingRegistrations)
 			.values(row)
-			.onConflictDoUpdate({ target: pendingRegistrations.email, set: row })
-			.run();
+			.onConflictDoUpdate({ target: pendingRegistrations.email, set: row });
 
 		try {
 			await issueCode(email);
@@ -71,7 +71,9 @@ export const actions: Actions = {
 
 	resend: async ({ request }) => {
 		const email = str(await request.formData(), 'email')?.toLowerCase() ?? '';
-		const pending = db.select().from(pendingRegistrations).where(eq(pendingRegistrations.email, email)).get();
+		const pending = (
+			await db.select().from(pendingRegistrations).where(eq(pendingRegistrations.email, email))
+		)[0];
 		if (!pending) return fail(400, { step: 'verify' as const, email, error: 'Start registration again' });
 		await issueCode(email);
 		return { step: 'verify' as const, email, resent: true };
@@ -83,21 +85,23 @@ export const actions: Actions = {
 		const code = str(fd, 'code', 10)?.replace(/\s/g, '') ?? '';
 		const err = (error: string) => fail(400, { step: 'verify' as const, email, error });
 
-		const pending = db.select().from(pendingRegistrations).where(eq(pendingRegistrations.email, email)).get();
+		const pending = (
+			await db.select().from(pendingRegistrations).where(eq(pendingRegistrations.email, email))
+		)[0];
 		if (!pending) return err('Start registration again');
 		if (pending.expiresAt.getTime() < Date.now() || pending.attempts >= MAX_ATTEMPTS)
 			return err('The code has expired, request a new one');
 		if (sha256(code) !== pending.codeHash) {
-			db.update(pendingRegistrations)
+			await db
+				.update(pendingRegistrations)
 				.set({ attempts: pending.attempts + 1 })
-				.where(eq(pendingRegistrations.id, pending.id))
-				.run();
+				.where(eq(pendingRegistrations.id, pending.id));
 			return err('Wrong code');
 		}
 
-		const user = db.transaction((tx) => {
-			tx.delete(pendingRegistrations).where(eq(pendingRegistrations.id, pending.id)).run();
-			return tx
+		const user = await db.transaction(async (tx) => {
+			await tx.delete(pendingRegistrations).where(eq(pendingRegistrations.id, pending.id));
+			const [created] = await tx
 				.insert(users)
 				.values({
 					nanoId: publicId(),
@@ -108,12 +112,12 @@ export const actions: Actions = {
 					graduationYear: pending.graduationYear
 				})
 				.onConflictDoNothing()
-				.returning()
-				.get();
+				.returning();
+			return created ?? null;
 		});
 		if (!user) return err('An account with this email already exists');
 
-		createSession(cookies, user.id);
+		await createSession(cookies, user.id);
 		redirect(303, '/profile');
 	}
 };

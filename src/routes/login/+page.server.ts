@@ -11,11 +11,11 @@ export const actions: Actions = {
 		const email = str(fd, 'email')?.toLowerCase() ?? '';
 		const password = (fd.get('password') as string | null) ?? '';
 
-		const user = db.select().from(users).where(eq(users.email, email)).get();
+		const user = (await db.select().from(users).where(eq(users.email, email)))[0];
 		if (!user || !(await checkPassword(password, user.passwordHash))) {
 			return fail(400, { email, error: 'Wrong email or password' });
 		}
-		createSession(cookies, user.id);
+		await createSession(cookies, user.id);
 		redirect(303, '/');
 	}
 };

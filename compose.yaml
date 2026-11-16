@@ -3,22 +3,46 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - '3000:3000'
+      - "3000:3000"
     env_file: .env
     environment:
       DATA_DIR: /data
-    volumes:
-      - ./data:/data
-
-  # Web UI for the database: http://<server>:8080
-  # Writes from here bypass the app: e.g. deleting user_badges rows lets automatic badges come back.
-  db-admin:
-    image: ghcr.io/coleifer/sqlite-web:latest
-    restart: unless-stopped
-    command: sqlite_web --host 0.0.0.0 --port 8080 --no-browser /data/db.sqlite
-    ports:
-      - '8080:8080'
+      DATABASE_URL: postgres://${POSTGRES_USER:-alumap}:${POSTGRES_PASSWORD:-alumap}@db:5432/${POSTGRES_DB:-alumap}
     volumes:
       - ./data:/data
     depends_on:
-      - alumap
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alumap}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alumap}
+      POSTGRES_DB: ${POSTGRES_DB:-alumap}
+    # localhost only, so `pnpm dev` can connect but the database is not public
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Web UI for the database: http://<server>:8081
+  db-admin:
+    image: adminer:latest
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    ports:
+      - "8081:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

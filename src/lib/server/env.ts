@@ -10,6 +10,7 @@ const e = process.env;
 
 export const env = {
 	dataDir: path.resolve(e.DATA_DIR || 'data'),
+	databaseUrl: e.DATABASE_URL || 'postgres://alumap:alumap@localhost:5432/alumap',
 
 	smtp: {
 		host: e.SMTP_HOST || '',

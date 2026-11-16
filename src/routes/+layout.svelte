@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { page } from '$app/state';
-	import { Map, CalendarDays, Lightbulb, Shield } from '@lucide/svelte';
+	import { Map, CalendarDays, Lightbulb, Shield, Info } from '@lucide/svelte';
 	import Avatar from '#lib/components/Avatar.svelte';
 	import type { LayoutProps } from './$types';
 
@@ -15,6 +15,7 @@
 		{ href: '/', label: 'Map', icon: Map, active: isMap },
 		{ href: '/events', label: 'Events', icon: CalendarDays, active: page.url.pathname.startsWith('/events') },
 		{ href: '/projects', label: 'Projects', icon: Lightbulb, active: page.url.pathname.startsWith('/projects') },
+		{ href: '/about', label: 'About', icon: Info, active: page.url.pathname.startsWith('/about') },
 		...(me?.isAdmin
 			? [{ href: '/admin', label: 'Admin', icon: Shield, active: page.url.pathname.startsWith('/admin') }]
 			: [])

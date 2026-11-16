@@ -5,8 +5,8 @@ import { int, str } from './forms.ts';
 import { publicId } from './ids.ts';
 import { deleteImage, saveImage } from './images.ts';
 
-export function getProject(nanoId: string, viewer: User) {
-	const project = db.select().from(projects).where(eq(projects.nanoId, nanoId)).get();
+export async function getProject(nanoId: string, viewer: User) {
+	const project = (await db.select().from(projects).where(eq(projects.nanoId, nanoId)))[0];
 	if (!project) error(404, 'Project not found');
 	const canEdit = viewer.isAdmin || project.ownerId === viewer.id;
 	if (project.status !== 'published' && !canEdit) error(404, 'Project not found');
@@ -14,7 +14,7 @@ export function getProject(nanoId: string, viewer: User) {
 }
 
 export async function deleteProject(project: Project) {
-	db.delete(projects).where(eq(projects.id, project.id)).run();
+	await db.delete(projects).where(eq(projects.id, project.id));
 	await deleteImage(project.imageId);
 }
 
@@ -61,7 +61,7 @@ export async function saveProject(
 	};
 
 	if (!project) {
-		return db
+		const [created] = await db
 			.insert(projects)
 			.values({
 				...values,
@@ -70,12 +70,12 @@ export async function saveProject(
 				ownerId: user.id,
 				status: user.isAdmin ? 'published' : 'pending'
 			})
-			.returning()
-			.get();
+			.returning();
+		return created;
 	}
 
 	const removeImage = fd.get('removeImage') === 'on';
-	const updated = db
+	const [updated] = await db
 		.update(projects)
 		.set({
 			...values,
@@ -83,8 +83,7 @@ export async function saveProject(
 			status: user.isAdmin ? project.status : 'pending'
 		})
 		.where(eq(projects.id, project.id))
-		.returning()
-		.get();
+		.returning();
 	if (imageId || removeImage) await deleteImage(project.imageId);
 	return updated;
 }

@@ -1,0 +1,4 @@
+import { getAboutPage } from '#lib/server/pages.ts';
+import type { PageServerLoad } from './$types';
+
+export const load: PageServerLoad = async () => ({ about: await getAboutPage() });
