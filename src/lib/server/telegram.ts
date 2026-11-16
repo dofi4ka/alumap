@@ -21,8 +21,10 @@ const greeting = (name: string) => `👋 Hello, ${name}
 🎓 Welcome to IU Alumap — we're glad to have you here!
 🔔 You will receive your app notifications through this bot
 
-📍 Travelling? Send /away and your location to set a temporary city.
-📞 Found a bug? Or have a suggestion? Contact @dofi4ka`;
+📍 Travelling? Send /away and your location to set a temporary city. Keep alumnis aware!
+
+📞 Found a bug? Or have a suggestion? Contact @dofi4ka
+👥 Questions about community? Ask @Leisan_I, @aliyarashk`;
 
 const durationHelp =
 	'How long will you be here?\nReply with a duration like 14d, 3w or 2m, or pick one below:';
@@ -100,7 +102,7 @@ export function startBot() {
 			return;
 		}
 		await ctx.reply(
-			'📍 Send me your current location and I will find the nearest city. You can also share a location from the attachment menu.',
+			'📍 Send me your current location and I will find the nearest city.',
 			{
 				reply_markup: new Keyboard()
 					.requestLocation('📡 Send my location')

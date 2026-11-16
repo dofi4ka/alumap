@@ -26,22 +26,53 @@ export type NotificationKind = MovementKind | 'event';
 const cityLabel = (city: City, near: string | null) =>
 	near ? `${city.name} (near ${near})` : city.name;
 
+const movementBody = (name: string, kind: MovementKind, where: string, duration?: string) =>
+	kind === 'appeared'
+		? `${name} joined Alumap in ${where}.`
+		: kind === 'temporary'
+			? duration
+				? `${name} moved to ${where} for ${duration}.`
+				: `${name} is temporarily in ${where}.`
+			: `${name} moved to ${where}.`;
+
 export const movementMessage = (
 	actor: Pick<User, 'firstName' | 'lastName' | 'nanoId'>,
 	kind: MovementKind,
 	city: City,
-	near: string | null
-) => {
-	const name = `${actor.firstName} ${actor.lastName}`;
-	const where = cityLabel(city, near);
-	const text =
-		kind === 'appeared'
-			? `${name} joined Alumap in ${where}.`
-			: kind === 'temporary'
-				? `${name} is temporarily in ${where}.`
-				: `${name} moved to ${where}.`;
-	return text;
-};
+	near: string | null,
+	duration?: string
+) => movementBody(`${actor.firstName} ${actor.lastName}`, kind, cityLabel(city, near), duration);
+
+// Telegram notifications are HTML, so user-provided names, cities and titles stay safe.
+const escapeHtml = (value: string) =>
+	value
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;');
+
+const isAbsoluteUrl = (url: string) => /^https?:\/\//.test(url);
+
+/** The actor's name as an inline link; falls back to plain text when MINIAPP_URL is missing. */
+const nameLink = (name: string, link: string) =>
+	isAbsoluteUrl(link)
+		? `<a href="${escapeHtml(link)}">${escapeHtml(name)}</a>`
+		: escapeHtml(name);
+
+const movementTelegramText = (
+	actor: Pick<User, 'firstName' | 'lastName'>,
+	kind: MovementKind,
+	city: City,
+	near: string | null,
+	link: string,
+	duration?: string
+) =>
+	`🔔 ${movementBody(
+		nameLink(`${actor.firstName} ${actor.lastName}`, link),
+		kind,
+		escapeHtml(cityLabel(city, near)),
+		duration && escapeHtml(duration)
+	)}`;
 
 const appLink = (path: string) =>
 	env.miniappUrl ? `${env.miniappUrl.replace(/\/$/, '')}${path}` : path;
@@ -107,6 +138,9 @@ type Outgoing = {
 	link: string;
 	linkLabel: string;
 	emailSubject: string;
+	telegramText: string;
+	telegramParseMode?: 'HTML';
+	telegramButton?: { label: string; url: string };
 };
 
 async function saveAndDeliver(outgoing: Outgoing[]) {
@@ -135,8 +169,10 @@ async function saveAndDeliver(outgoing: Outgoing[]) {
 			if (n.telegramId !== null)
 				deliveries.push(
 					(async () => {
-						const text = `🔔 ${n.message}\n\n${n.linkLabel}: ${n.link}`;
-						const ok = await sendTelegramMessage(n.telegramId!, text);
+						const ok = await sendTelegramMessage(n.telegramId!, n.telegramText, {
+							parseMode: n.telegramParseMode,
+							inlineUrl: n.telegramButton
+						});
 						if (!ok) throw new Error('telegram delivery failed');
 					})()
 				);
@@ -151,7 +187,12 @@ async function saveAndDeliver(outgoing: Outgoing[]) {
 /**
  * Tells everyone who follows the city (or a city within 150 km) that an alumnus is now there.
  */
-export async function notifyMovement(actor: User, city: EffectiveLocation, kind: MovementKind) {
+export async function notifyMovement(
+	actor: User,
+	city: EffectiveLocation,
+	kind: MovementKind,
+	duration?: string
+) {
 	if (!actor.isApproved || actor.isBanned) return;
 	const followers = await nearbyFollowers(city, actor.id);
 	if (followers.size === 0) return;
@@ -162,7 +203,7 @@ export async function notifyMovement(actor: User, city: EffectiveLocation, kind:
 			userId,
 			email: follower.email,
 			telegramId: follower.telegramId,
-			message: movementMessage(actor, kind, city, follower.near),
+			message: movementMessage(actor, kind, city, follower.near, duration),
 			near: follower.near,
 			kind,
 			actorNanoId: actor.nanoId,
@@ -170,7 +211,9 @@ export async function notifyMovement(actor: User, city: EffectiveLocation, kind:
 			city,
 			link,
 			linkLabel: 'Open their profile',
-			emailSubject: 'Alumap: an alum is nearby'
+			emailSubject: 'Alumap: an alum is nearby',
+			telegramText: movementTelegramText(actor, kind, city, follower.near, link, duration),
+			telegramParseMode: 'HTML'
 		}))
 	);
 }
@@ -184,20 +227,25 @@ export async function notifyEventPublished(event: Event) {
 	const link = appLink(`/events/${event.nanoId}`);
 	const when = formatEventDate(event.startsAt);
 	await saveAndDeliver(
-		[...followers].map(([userId, follower]) => ({
-			userId,
-			email: follower.email,
-			telegramId: follower.telegramId,
-			message: `New event in ${cityLabel(city, follower.near)}: ${event.title} (${when}).`,
-			near: follower.near,
-			kind: 'event',
-			actorNanoId: null,
-			eventNanoId: event.nanoId,
-			city,
-			link,
-			linkLabel: 'Open event',
-			emailSubject: `Alumap: new event in ${city.name}`
-		}))
+		[...followers].map(([userId, follower]) => {
+			const message = `New event in ${cityLabel(city, follower.near)}: ${event.title} (${when}).`;
+			return {
+				userId,
+				email: follower.email,
+				telegramId: follower.telegramId,
+				message,
+				near: follower.near,
+				kind: 'event' as const,
+				actorNanoId: null,
+				eventNanoId: event.nanoId,
+				city,
+				link,
+				linkLabel: 'Open event',
+				emailSubject: `Alumap: new event in ${city.name}`,
+				telegramText: `🔔 ${message}`,
+				telegramButton: isAbsoluteUrl(link) ? { label: 'Open event', url: link } : undefined
+			};
+		})
 	);
 }
 

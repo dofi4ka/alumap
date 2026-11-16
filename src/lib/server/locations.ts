@@ -76,7 +76,8 @@ export async function setTemporaryLocation(
 	await syncAutoFollow(userId, 'temporary', city);
 
 	const after = effectiveLocation(updated);
-	if (after && !sameLocation(before, after)) await notifyMovement(updated, after, 'temporary');
+	if (after && !sameLocation(before, after))
+		await notifyMovement(updated, after, 'temporary', parsed.label);
 	return { ok: true, expiresAt, label: parsed.label };
 }
 
