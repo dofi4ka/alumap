@@ -1,16 +1,17 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import {
 		Briefcase,
 		Cake,
 		Camera,
-		Globe,
+		Check,
+		Copy,
 		KeyRound,
+		Link2,
 		LogOut,
-		Mail,
 		MapPin,
 		Pencil,
-		Phone,
+		Plus,
 		Send,
 		Trash,
 		X
@@ -18,13 +19,24 @@
 	import Avatar from '#lib/components/Avatar.svelte';
 	import BadgeIcon from '#lib/components/BadgeIcon.svelte';
 	import BadgeStrip from '#lib/components/BadgeStrip.svelte';
+	import ChangeEmail from '#lib/components/ChangeEmail.svelte';
 	import CityPicker from '#lib/components/CityPicker.svelte';
 	import ExperienceForm from '#lib/components/ExperienceForm.svelte';
 	import FormActions from '#lib/components/FormActions.svelte';
 	import Modal from '#lib/components/Modal.svelte';
+	import ReferralForm from '#lib/components/ReferralForm.svelte';
 	import Section from '#lib/components/Section.svelte';
+	import SocialIcon from '#lib/components/SocialIcon.svelte';
+	import TemporaryLocationForm from '#lib/components/TemporaryLocationForm.svelte';
 	import { submitThen } from '#lib/enhance.ts';
-	import { employmentTypes, formatDuration, formatMonth, locationTypes } from '#lib/format.ts';
+	import {
+		employmentTypes,
+		formatDay,
+		formatDuration,
+		formatMonth,
+		locationTypes
+	} from '#lib/format.ts';
+	import { socialLabel } from '#lib/socials.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -36,8 +48,19 @@
 	let avatarForm = $state<HTMLFormElement>();
 	let skillInput = $state('');
 	let changingPassword = $state(false);
+	let changingEmail = $state(false);
+	let tempModalOpen = $state(false);
+	let editingReferral = $state<'new' | number | null>(null);
 	let openBadgeId = $state<number | null>(null);
+	let copiedId = $state<number | null>(null);
+	let socials = $state<string[]>([]);
+
 	const openBadge = $derived(data.badges.find((b) => b.id === openBadgeId));
+	const editedReferral = $derived(
+		typeof editingReferral === 'number'
+			? (p.referrals.find((r) => r.id === editingReferral) ?? null)
+			: null
+	);
 
 	const birthday = $derived(
 		p.birthday &&
@@ -47,6 +70,44 @@
 				timeZone: 'UTC'
 			})
 	);
+
+	function openHeaderEditor() {
+		socials = [...p.socialLinks];
+		editingHeader = true;
+	}
+
+	async function copyText(text: string) {
+		try {
+			await navigator.clipboard.writeText(text);
+			return true;
+		} catch {
+			const area = document.createElement('textarea');
+			area.value = text;
+			area.style.position = 'fixed';
+			area.style.opacity = '0';
+			document.body.appendChild(area);
+			area.select();
+			const ok = document.execCommand('copy');
+			area.remove();
+			return ok;
+		}
+	}
+
+	const copyReferral =
+		(id: number): SubmitFunction =>
+		() =>
+		async ({ result, update }) => {
+			if (result.type === 'success') {
+				const url = (result.data as { url?: string } | undefined)?.url;
+				if (url && (await copyText(url))) {
+					copiedId = id;
+					setTimeout(() => {
+						if (copiedId === id) copiedId = null;
+					}, 2200);
+				}
+			}
+			await update({ reset: false });
+		};
 </script>
 
 <svelte:head><title>Alumap - {p.firstName} {p.lastName}</title></svelte:head>
@@ -59,7 +120,7 @@
 		</div>
 	{/if}
 
-	{#if form?.error && !editingHeader && !expModalOpen && !changingPassword}
+	{#if form?.error && !editingHeader && !expModalOpen && !changingPassword && !changingEmail && !tempModalOpen && editingReferral === null}
 		<p class="error-box fixed inset-x-4 bottom-24 z-40 mx-auto max-w-md shadow-lg md:bottom-6">{form.error}</p>
 	{/if}
 
@@ -96,117 +157,197 @@
 				</div>
 				{#if data.canEdit}
 					<div class="flex gap-1">
-						<button class="btn-ghost" onclick={() => (editingHeader = true)} aria-label="Edit profile">
+						<button class="btn-ghost" onclick={openHeaderEditor} aria-label="Edit profile">
 							<Pencil size={16} />
 						</button>
 					</div>
 				{/if}
 			</div>
 
-        <h1 class="mt-3 text-2xl font-bold tracking-tight">{p.firstName} {p.lastName}</h1>
-        {#if p.headline}<p class="mt-0.5 text-zinc-700">{p.headline}</p>{/if}
-        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-500">
-          <span class="chip">
-            {p.graduationYear ? `IU alumni ’${String(p.graduationYear).slice(2)}` : "Alumni's friend"}
-          </span>
-          {#if p.locationName && (p.showLocation || data.canEdit)}
-            {#if p.showLocation && p.locationLat !== null}
-              <a href="/?lat={p.locationLat}&lng={p.locationLng}&zoom=9" class="flex items-center gap-1 hover:text-brand-600">
-                <MapPin size={15} />{p.locationName}
-              </a>
-            {:else}
-              <span class="flex items-center gap-1"><MapPin size={15} />{p.locationName}</span>
-            {/if}
-          {/if}
-          {#if birthday}<span class="flex items-center gap-1"><Cake size={15} />{birthday}</span>{/if}
-        </div>
-        {#if p.telegramUsername || p.contactEmail || p.contactPhone || p.website}
-          <div class="mt-4 flex flex-wrap gap-2">
-            {#if p.telegramUsername}
-              <a class="btn-primary py-2" href="https://t.me/{p.telegramUsername}" target="_blank" rel="noopener">
-                <Send size={16} />Telegram
-              </a>
-            {/if}
-            {#if p.contactEmail}
-              <a class="btn-secondary py-2" href="mailto:{p.contactEmail}"><Mail size={16} />Email</a>
-            {/if}
-            {#if p.contactPhone}
-              <a class="btn-secondary py-2" href="tel:{p.contactPhone}"><Phone size={16} />{p.contactPhone}</a>
-            {/if}
-            {#if p.website}
-              <a class="btn-secondary py-2" href={p.website} target="_blank" rel="noopener nofollow">
-                <Globe size={16} />{p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
-              </a>
-            {/if}
-          </div>
-        {/if}
-    </div>
-  </section>
+			<h1 class="mt-3 text-2xl font-bold tracking-tight">{p.firstName} {p.lastName}</h1>
+			{#if p.headline}<p class="mt-0.5 text-zinc-700">{p.headline}</p>{/if}
+			<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-500">
+				<span class="chip">
+					{#if p.alumni}
+						IU alumni{p.graduationYear ? ` ’${String(p.graduationYear).slice(2)}` : ''}
+					{:else}
+						IU Friend
+					{/if}
+				</span>
+				{#if p.location}
+					<a
+						href="/?lat={p.location.lat}&lng={p.location.lng}&zoom=9"
+						class="flex items-center gap-1 hover:text-brand-600"
+					>
+						<MapPin size={15} />{p.location.name}
+						{#if p.location.temporary}
+							<span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+								temporarily until {formatDay(p.location.expiresAt!)}
+							</span>
+						{/if}
+					</a>
+				{/if}
+				{#if birthday}<span class="flex items-center gap-1"><Cake size={15} />{birthday}</span>{/if}
+			</div>
 
-  <Modal bind:open={editingHeader} title="Edit profile">
-        <form method="POST" action="?/basic" use:enhance={submitThen(() => (editingHeader = false))} class="space-y-3">
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="label" for="fn">First name</label>
-              <input id="fn" class="input" name="firstName" value={p.firstName} required />
-            </div>
-            <div>
-              <label class="label" for="ln">Last name</label>
-              <input id="ln" class="input" name="lastName" value={p.lastName} required />
-            </div>
-          </div>
-          <div>
-            <label class="label" for="hl">Headline</label>
-            <input id="hl" class="input" name="headline" value={p.headline ?? ''} placeholder="ML engineer at Sber - IU BS'21" maxlength="120" />
-          </div>
-          {#if p.graduationYear !== null || data.viewerIsAdmin}
-            <div>
-              <label class="label" for="gy">Graduation year</label>
-              <input id="gy" class="input" type="number" name="graduationYear" min="2014" value={p.graduationYear ?? ''} />
-            </div>
-          {/if}
-          <div>
-            <label class="label" for="bd">Birthday</label>
-            <input id="bd" class="input" type="date" name="birthday" value={p.birthday ?? ''} />
-          </div>
+			{#if p.telegramUsername || p.socialLinks.length}
+				<div class="mt-4 flex flex-wrap items-center gap-2">
+					{#if p.telegramUsername}
+						<a class="btn-primary py-2" href="https://t.me/{p.telegramUsername}" target="_blank" rel="noopener">
+							<Send size={16} />Telegram
+						</a>
+					{/if}
+					{#each p.socialLinks as url (url)}
+						<a
+							class="btn-secondary size-10 p-0"
+							href={url}
+							target="_blank"
+							rel="noopener nofollow"
+							title={socialLabel(url)}
+							aria-label={socialLabel(url)}
+						>
+							<SocialIcon {url} size={18} />
+						</a>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	</section>
 
-          <h3 class="pt-3 font-semibold">Location</h3>
-          <CityPicker
-            value={p.locationName && p.locationLat !== null && p.locationLng !== null
-              ? { name: p.locationName, lat: p.locationLat, lng: p.locationLng }
-              : null}
-            placeholder="Where do you live?"
-          />
-          <label class="flex items-start gap-3 rounded-xl bg-zinc-50 p-3 text-sm">
-            <input type="checkbox" name="showLocation" checked={p.showLocation} class="mt-0.5 size-4 accent-brand-500" />
-            <span>
-              <b>Show me on the map</b><br />
-              <span class="text-zinc-500">Everyone on Alumap will see you in this city. Only the city is shared, never your exact location.</span>
-            </span>
-          </label>
+	<!-- Temporary location -->
+	{#if data.canEdit || p.temporaryLocation}
+		<section class="card">
+			<div class="flex items-start justify-between gap-3">
+				<div class="min-w-0">
+					<h2 class="text-lg font-semibold">Temporary location</h2>
+					{#if p.temporaryLocation}
+						<p class="mt-1 text-sm text-zinc-600">
+							<b>{p.temporaryLocation.name}</b> until {formatDay(p.temporaryLocation.expiresAt)}
+							{#if p.homeLocation}
+								<span class="text-zinc-400">· home is {p.homeLocation.name}</span>
+							{/if}
+						</p>
+						<p class="mt-1 text-xs text-zinc-400">
+							You are shown on the map here. Your home city comes back automatically when it ends.
+						</p>
+					{:else}
+						<p class="mt-1 text-sm text-zinc-500">
+							Travelling or staying elsewhere for a while? Set a temporary city without changing your home
+							location.
+						</p>
+					{/if}
+				</div>
+				{#if data.canEdit}
+					<div class="flex shrink-0 gap-1">
+						<button class="btn-secondary py-2" onclick={() => (tempModalOpen = true)}>
+							{p.temporaryLocation ? 'Change' : 'Set city'}
+						</button>
+						{#if p.temporaryLocation}
+							<form method="POST" action="?/clearTemporaryLocation" use:enhance={submitThen()}>
+								<button class="btn-ghost text-zinc-500" title="Clear temporary location" aria-label="Clear temporary location">
+									<X size={18} />
+								</button>
+							</form>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</section>
+	{/if}
 
-          <h3 class="pt-3 font-semibold">Contact info</h3>
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label class="label" for="tg">Telegram username</label>
-              <input id="tg" class="input" name="telegramUsername" value={p.telegramUsername ?? ''} placeholder="@username" />
-            </div>
-            <div>
-              <label class="label" for="ce">Public email</label>
-              <input id="ce" class="input" type="email" name="contactEmail" value={p.contactEmail ?? ''} placeholder="me@example.com" />
-            </div>
-            <div>
-              <label class="label" for="ph">Phone</label>
-              <input id="ph" class="input" type="tel" name="contactPhone" value={p.contactPhone ?? ''} placeholder="+7 900 000-00-00" />
-            </div>
-            <div>
-              <label class="label" for="ws">Website</label>
-              <input id="ws" class="input" name="website" value={p.website ?? ''} placeholder="github.com/me" />
-            </div>
-          </div>
-          <FormActions onCancel={() => (editingHeader = false)} />
-        </form>
-  </Modal>
+	<Modal bind:open={tempModalOpen} title="Temporary location">
+		<TemporaryLocationForm close={() => (tempModalOpen = false)} />
+	</Modal>
+
+	<!-- About -->
+	{#if p.bio || data.canEdit}
+		<Section title="About" canEdit={data.canEdit}>
+			{#snippet edit(close)}
+				<form method="POST" action="?/about" use:enhance={submitThen(close)}>
+					<textarea
+						class="input min-h-36"
+						name="bio"
+						maxlength="3000"
+						placeholder="Tell about yourself: what you do, what you are interested in, how you can help others…"
+					>{p.bio ?? ''}</textarea>
+					<FormActions onCancel={close} />
+				</form>
+			{/snippet}
+			{#if p.bio}
+				<p class="whitespace-pre-line text-zinc-700">{p.bio}</p>
+			{:else}
+				<p class="text-sm text-zinc-400">Nothing here yet</p>
+			{/if}
+		</Section>
+	{/if}
+
+	<!-- Referrals -->
+	{#if p.referrals.length || data.canEdit}
+		<Section title="Referrals" canEdit={data.canEdit} addMode>
+			{#snippet edit(close)}
+				<ReferralForm close={close} />
+			{/snippet}
+			{#if p.referrals.length === 0}
+				<p class="text-sm text-zinc-400">Add companies you can refer alumni to</p>
+			{/if}
+			<ul class="divide-y divide-zinc-100">
+				{#each p.referrals as r (r.id)}
+					<li class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+						<div class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-sm font-bold text-zinc-500">
+							{r.company.slice(0, 2).toUpperCase()}
+						</div>
+						<div class="min-w-0 flex-1">
+							<div class="truncate font-semibold">{r.company}</div>
+							<div class="text-xs text-zinc-500">
+								Referral link
+								{#if data.canEdit}
+									· {r.copies} {r.copies === 1 ? 'person copied' : 'people copied'}
+								{/if}
+							</div>
+						</div>
+						<form method="POST" action="?/copyReferral" use:enhance={copyReferral(r.id)}>
+							<input type="hidden" name="id" value={r.id} />
+							<button class="btn-secondary py-2" title="Copy the referral link">
+								{#if copiedId === r.id}
+									<Check size={16} />Copied
+								{:else}
+									<Copy size={16} />Copy
+								{/if}
+							</button>
+						</form>
+						{#if data.canEdit}
+							<div class="flex shrink-0 flex-col">
+								<button
+									class="btn-ghost"
+									onclick={() => (editingReferral = r.id)}
+									aria-label="Edit referral"><Pencil size={15} /></button
+								>
+								<form method="POST" action="?/deleteReferral" use:enhance={submitThen()}>
+									<input type="hidden" name="id" value={r.id} />
+									<button
+										class="btn-ghost"
+										aria-label="Delete referral"
+										onclick={(e) => !confirm('Delete this referral?') && e.preventDefault()}
+									>
+										<Trash size={15} />
+									</button>
+								</form>
+							</div>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</Section>
+
+		<Modal
+			bind:open={() => editingReferral !== null && editedReferral !== null, (v) => !v && (editingReferral = null)}
+			title="Edit referral"
+		>
+			{#if editedReferral}
+				<ReferralForm referral={editedReferral} close={() => (editingReferral = null)} />
+			{/if}
+		</Modal>
+	{/if}
 
 	<!-- Badges -->
 	<BadgeStrip badges={data.badges} onselect={(id) => (openBadgeId = id)} />
@@ -214,7 +355,7 @@
 	{#if openBadge}
 		{@const locked = !openBadge.earnedAt}
 		<Modal bind:open={() => true, (v) => !v && (openBadgeId = null)} title={openBadge.name}>
-			<div class="flex flex-col items-center gap-3 pb-1 text-center">
+			<div class="flex flex-col items-center gap-3 px-1 pt-1.5 pb-1 text-center">
 				<BadgeIcon svg={openBadge.svg} rarity={openBadge.rarity} size={96} {locked} />
 				<span class="text-xs font-semibold tracking-wide text-zinc-500 uppercase">{openBadge.rarity}</span>
 				<p class="text-zinc-700">{openBadge.description}</p>
@@ -225,7 +366,10 @@
 				{:else if openBadge.progress}
 					<div class="w-full max-w-xs">
 						<div class="h-2 overflow-hidden rounded-full bg-zinc-100">
-							<div class="h-full rounded-full bg-brand-500" style="width:{(100 * openBadge.progress.current) / openBadge.progress.target}%"></div>
+							<div
+								class="h-full rounded-full bg-brand-500"
+								style="width:{(100 * openBadge.progress.current) / openBadge.progress.target}%"
+							></div>
 						</div>
 						<p class="mt-1 text-sm text-zinc-500">{openBadge.progress.current} of {openBadge.progress.target}</p>
 					</div>
@@ -233,7 +377,12 @@
 					<p class="text-sm text-zinc-400">Not unlocked yet</p>
 				{/if}
 				{#if data.viewerIsAdmin}
-					<form method="POST" action={locked ? '?/giveBadge' : '?/removeBadge'} use:enhance={submitThen(() => (openBadgeId = null))} class="pt-2">
+					<form
+						method="POST"
+						action={locked ? '?/giveBadge' : '?/removeBadge'}
+						use:enhance={submitThen(() => (openBadgeId = null))}
+						class="pt-2"
+					>
 						<input type="hidden" name="badgeId" value={openBadge.id} />
 						{#if locked}
 							<button class="btn-primary">Grant badge</button>
@@ -246,78 +395,72 @@
 		</Modal>
 	{/if}
 
-	<!-- About -->
-	{#if p.bio || data.canEdit}
-		<Section title="About" canEdit={data.canEdit}>
-			{#snippet edit(close)}
-				<form method="POST" action="?/about" use:enhance={submitThen(close)}>
-					<textarea class="input min-h-36" name="bio" maxlength="3000" placeholder="Tell about yourself: what you do, what you are interested in, how you can help others…">{p.bio ?? ''}</textarea>
-					<FormActions onCancel={close} />
-				</form>
-			{/snippet}
-			{#if p.bio}
-				<p class="whitespace-pre-line text-zinc-700">{p.bio}</p>
-			{:else}
-				<p class="text-sm text-zinc-400">Nothing here yet</p>
-			{/if}
-		</Section>
-	{/if}
-
 	<!-- Experience -->
 	{#if data.experiences.length || data.canEdit}
 		<Section title="Experience" canEdit={data.canEdit} addMode>
 			{#snippet edit(close)}
 				<ExperienceForm {close} />
 			{/snippet}
-      {#if data.experiences.length === 0}
-        <p class="text-sm text-zinc-400">Add your jobs, internships and projects</p>
-      {/if}
-      <ul class="divide-y divide-zinc-100">
-        {#each data.experiences as exp (exp.id)}
-          <li class="py-3 first:pt-0 last:pb-0">
-              <div class="flex gap-3">
-                <div class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-500">
-                  <Briefcase size={20} />
-                </div>
-                <div class="min-w-0 flex-1">
-                  <div class="font-semibold">{exp.title}</div>
-                  <div class="text-sm text-zinc-700">
-                    {[exp.organization, exp.employmentType && employmentTypes[exp.employmentType]].filter(Boolean).join(' - ')}
-                  </div>
-                  <div class="text-sm text-zinc-500">
-                    {formatMonth(exp.startDate)} – {exp.endDate ? formatMonth(exp.endDate) : 'Present'} - {formatDuration(exp.startDate, exp.endDate)}
-                  </div>
-                  {#if exp.location || exp.locationType}
-                    <div class="text-sm text-zinc-500">
-                      {[exp.location, exp.locationType && locationTypes[exp.locationType]].filter(Boolean).join(' - ')}
-                    </div>
-                  {/if}
-                  {#if exp.description}
-                    <p class="mt-2 text-sm whitespace-pre-line text-zinc-700">{exp.description}</p>
-                  {/if}
-                </div>
-                {#if data.canEdit}
-                  <div class="flex shrink-0 flex-col">
-                    <button class="btn-ghost" onclick={() => ((editingExp = exp.id), (expModalOpen = true))} aria-label="Edit"><Pencil size={15} /></button>
-                    <form method="POST" action="?/deleteExperience" use:enhance={submitThen()}>
-                      <input type="hidden" name="id" value={exp.id} />
-                      <button class="btn-ghost" aria-label="Delete" onclick={(e) => !confirm('Delete this experience?') && e.preventDefault()}>
-                        <Trash size={15} />
-                      </button>
-                    </form>
-                  </div>
-                {/if}
-              </div>
-          </li>
-        {/each}
-      </ul>
-    </Section>
+			{#if data.experiences.length === 0}
+				<p class="text-sm text-zinc-400">Add your jobs, internships and projects</p>
+			{/if}
+			<ul class="divide-y divide-zinc-100">
+				{#each data.experiences as exp (exp.id)}
+					<li class="py-3 first:pt-0 last:pb-0">
+						<div class="flex gap-3">
+							<div class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-500">
+								<Briefcase size={20} />
+							</div>
+							<div class="min-w-0 flex-1">
+								<div class="font-semibold">{exp.title}</div>
+								<div class="text-sm text-zinc-700">
+									{[exp.organization, exp.employmentType && employmentTypes[exp.employmentType]].filter(Boolean).join(' - ')}
+								</div>
+								<div class="text-sm text-zinc-500">
+									{formatMonth(exp.startDate)} – {exp.endDate ? formatMonth(exp.endDate) : 'Present'} - {formatDuration(
+										exp.startDate,
+										exp.endDate
+									)}
+								</div>
+								{#if exp.location || exp.locationType}
+									<div class="text-sm text-zinc-500">
+										{[exp.location, exp.locationType && locationTypes[exp.locationType]].filter(Boolean).join(' - ')}
+									</div>
+								{/if}
+								{#if exp.description}
+									<p class="mt-2 text-sm whitespace-pre-line text-zinc-700">{exp.description}</p>
+								{/if}
+							</div>
+							{#if data.canEdit}
+								<div class="flex shrink-0 flex-col">
+									<button
+										class="btn-ghost"
+										onclick={() => ((editingExp = exp.id), (expModalOpen = true))}
+										aria-label="Edit"><Pencil size={15} /></button
+									>
+									<form method="POST" action="?/deleteExperience" use:enhance={submitThen()}>
+										<input type="hidden" name="id" value={exp.id} />
+										<button
+											class="btn-ghost"
+											aria-label="Delete"
+											onclick={(e) => !confirm('Delete this experience?') && e.preventDefault()}
+										>
+											<Trash size={15} />
+										</button>
+									</form>
+								</div>
+							{/if}
+						</div>
+					</li>
+				{/each}
+			</ul>
+		</Section>
 
-    <Modal bind:open={expModalOpen} title="Edit experience">
-      {@const exp = data.experiences.find((e) => e.id === editingExp)}
-      {#if exp}<ExperienceForm {exp} close={() => (expModalOpen = false)} />{/if}
-    </Modal>
-  {/if}
+		<Modal bind:open={expModalOpen} title="Edit experience">
+			{@const exp = data.experiences.find((e) => e.id === editingExp)}
+			{#if exp}<ExperienceForm {exp} close={() => (expModalOpen = false)} />{/if}
+		</Modal>
+	{/if}
 
 	<!-- Skills -->
 	{#if data.skills.length || data.canEdit}
@@ -337,12 +480,7 @@
 				{#if data.skills.length === 0 && !data.canEdit}<p class="text-sm text-zinc-400">No skills yet</p>{/if}
 			</div>
 			{#if data.canEdit}
-				<form
-					method="POST"
-					action="?/addSkill"
-					class="mt-3 flex gap-2"
-					use:enhance={submitThen(() => (skillInput = ''))}
-				>
+				<form method="POST" action="?/addSkill" class="mt-3 flex gap-2" use:enhance={submitThen(() => (skillInput = ''))}>
 					<input class="input" name="name" bind:value={skillInput} placeholder="Add a skill, e.g. Kubernetes" maxlength="40" />
 					<button class="btn-secondary" disabled={!skillInput.trim()}>Add</button>
 				</form>
@@ -350,62 +488,278 @@
 		</Section>
 	{/if}
 
-  {#if data.canEdit}
-    <!-- Account -->
-    <Section title="Account">
-      <div class="space-y-3">
-        {#if p.email}<p class="text-zinc-500">Login email: <span class="text-zinc-800">{p.email}</span></p>{/if}
-        {#if data.isSelf}
-          {#if form && 'passwordChanged' in form}
-            <p class="text-brand-700">Password changed</p>
-          {/if}
-        {/if}
-        {#if p.telegramConnected}
-          <form method="POST" action="?/disconnectTelegram" use:enhance={submitThen()}>
-            <button class="btn-secondary">Disconnect Telegram</button>
-          </form>
-        {:else if data.isSelf}
-          <!-- no enhance: the action redirects to t.me -->
-          <form method="POST" action="?/connectTelegram">
-            <button class="btn-primary" disabled={!data.botEnabled}><Send size={16} />Connect Telegram</button>
-          </form>
-        {/if}
-        {#if data.isSelf}
-          <button class="btn-secondary" onclick={() => (changingPassword = true)}><KeyRound size={16} />Change password</button>
-          <form method="POST" action="/logout">
-            <button class="btn-danger"><LogOut size={16} />Sign out</button>
-          </form>
-        {/if}
-        {#if data.viewerIsAdmin && !data.isSelf}
-          {#if p.email}<p class="text-zinc-500">Status: <span class="text-zinc-800"> 
-            {p.isAdmin ? 'Admin' : p.isBanned ? 'Banned' : p.isApproved ? 'Approved' : 'Waiting for approval'} 
-          </span></p>{/if}
-          {#if !p.isApproved && !p.isBanned}
-            <form method="POST" action="?/approve" use:enhance={submitThen()}><button class="btn-primary">Approve</button></form>
-          {/if}
-          {#if !p.isAdmin}
-            {#if p.isBanned}
-              <form method="POST" action="?/unban" use:enhance={submitThen()}><button class="btn-secondary">Unban</button></form>
-            {:else}
-              <form method="POST" action="?/ban" use:enhance={submitThen()}><button class="btn-danger">Ban</button></form>
-            {/if}
-          {/if}
-        {/if}
-      </div>
-    </Section>
+	{#if data.canEdit}
+		<!-- Account -->
+		<Section title="Account">
+			<div class="space-y-6">
+				<div>
+					<h3 class="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">Email & status</h3>
+					<div class="divide-y divide-zinc-100 rounded-xl border border-zinc-200">
+						{#if p.email}
+							<div class="flex items-center justify-between gap-4 px-3 py-3">
+								<div class="min-w-0">
+									<p class="text-sm font-medium">Main email</p>
+									<p class="truncate text-sm text-zinc-500">{p.email}</p>
+								</div>
+								{#if data.isSelf}
+									<button class="btn-secondary shrink-0 py-1.5" onclick={() => (changingEmail = true)}>
+										Change
+									</button>
+								{/if}
+							</div>
+						{/if}
+						<div class="flex items-center justify-between gap-4 px-3 py-3">
+							<div class="min-w-0">
+								<p class="text-sm font-medium">IU alumni status</p>
+								{#if p.alumni}
+									<p class="truncate text-sm text-brand-700">
+										Verified{p.ssoEmail ? ` · ${p.ssoEmail}` : ''}
+									</p>
+								{:else}
+									<p class="text-sm text-zinc-500">Not verified — you are an IU Friend</p>
+								{/if}
+							</div>
+							{#if !p.alumni && data.isSelf}
+								<a class="btn-secondary shrink-0 py-1.5" href="/register/alumni">IU Alumni Verification</a>
+							{/if}
+						</div>
+						{#if p.alumni && p.graduationYear}
+							<div class="flex items-center justify-between gap-4 px-3 py-3">
+								<p class="text-sm font-medium">Graduation year</p>
+								<p class="text-sm text-zinc-500">{p.graduationYear}</p>
+							</div>
+						{/if}
+					</div>
+				</div>
 
-    <Modal bind:open={changingPassword} title="Change password">
-      <form
-        method="POST"
-        action="?/changePassword"
-        use:enhance={submitThen(() => (changingPassword = false))}
-        class="space-y-3"
-      >
-        <input class="input" type="password" name="currentPassword" placeholder="Current password" autocomplete="current-password" required />
-        <input class="input" type="password" name="newPassword" placeholder="New password (8+ characters)" autocomplete="new-password" minlength="8" required />
-        <input class="input" type="password" name="newPasswordRepeat" placeholder="Repeat new password" autocomplete="new-password" minlength="8" required />
-        <FormActions onCancel={() => (changingPassword = false)} label="Change password" />
-      </form>
-    </Modal>
-  {/if}
+				{#if data.isSelf}
+					{#if form && 'passwordChanged' in form}
+						<p class="text-sm text-brand-700">Password changed</p>
+					{/if}
+					<div>
+						<h3 class="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">Security</h3>
+						<div class="grid gap-2 sm:grid-cols-2">
+							<button
+								class="flex items-center gap-3 rounded-xl border border-zinc-200 p-3 text-left hover:bg-zinc-50"
+								onclick={() => (changingPassword = true)}
+							>
+								<span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600">
+									<KeyRound size={17} />
+								</span>
+								<span>
+									<span class="block text-sm font-medium">Change password</span>
+									<span class="block text-xs text-zinc-500">Use at least 8 characters</span>
+								</span>
+							</button>
+							<form method="POST" action="/logout" class="contents">
+								<button class="flex items-center gap-3 rounded-xl border border-red-100 bg-red-50/40 p-3 text-left hover:bg-red-50">
+									<span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-700">
+										<LogOut size={17} />
+									</span>
+									<span>
+										<span class="block text-sm font-medium text-red-700">Sign out</span>
+										<span class="block text-xs text-zinc-500">End this session</span>
+									</span>
+								</button>
+							</form>
+						</div>
+					</div>
+
+					<div>
+						<h3 class="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">Telegram</h3>
+						<div class="flex items-center justify-between gap-4 rounded-xl border border-zinc-200 px-3 py-3">
+							<div class="min-w-0">
+								<p class="text-sm font-medium">Telegram account</p>
+								<p class="truncate text-sm text-zinc-500">
+									{#if p.telegramConnected}
+										{p.telegramUsername ? `@${p.telegramUsername}` : 'Connected'}
+									{:else}
+										Not connected
+									{/if}
+								</p>
+							</div>
+							{#if p.telegramConnected}
+								<form method="POST" action="?/disconnectTelegram" use:enhance={submitThen()}>
+									<button class="btn-secondary shrink-0 py-1.5">Disconnect</button>
+								</form>
+							{:else}
+								<!-- no enhance: this action redirects to t.me -->
+								<form method="POST" action="?/connectTelegram">
+									<button class="btn-primary shrink-0 py-1.5" disabled={!data.botEnabled}>
+										<Send size={15} />Connect
+									</button>
+								</form>
+							{/if}
+						</div>
+						{#if !data.botEnabled}
+							<p class="mt-1 text-xs text-zinc-400">Telegram login is not configured on this server.</p>
+						{/if}
+					</div>
+				{/if}
+
+				{#if data.viewerIsAdmin && !data.isSelf}
+					<div>
+						<h3 class="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">Admin</h3>
+						<div class="rounded-xl border border-zinc-200 px-3 py-3">
+							<p class="text-sm text-zinc-500">
+								Status:
+								<span class="font-medium text-zinc-800">
+									{p.isAdmin
+										? 'Admin'
+										: p.isBanned
+											? 'Banned'
+											: p.isApproved
+												? 'Approved'
+												: 'Waiting for approval'}
+								</span>
+							</p>
+							<div class="mt-3 flex flex-wrap gap-2">
+								{#if !p.isApproved && !p.isBanned}
+									<form method="POST" action="?/approve" use:enhance={submitThen()}>
+										<button class="btn-primary py-2">Approve</button>
+									</form>
+								{/if}
+								{#if !p.isAdmin}
+									{#if p.isBanned}
+										<form method="POST" action="?/unban" use:enhance={submitThen()}>
+											<button class="btn-secondary py-2">Unban</button>
+										</form>
+									{:else}
+										<form method="POST" action="?/ban" use:enhance={submitThen()}>
+											<button class="btn-danger py-2">Ban</button>
+										</form>
+									{/if}
+								{/if}
+							</div>
+						</div>
+					</div>
+				{/if}
+			</div>
+		</Section>
+
+		<!-- Edit profile -->
+		<Modal bind:open={editingHeader} title="Edit profile">
+			<form method="POST" action="?/basic" use:enhance={submitThen(() => (editingHeader = false))} class="space-y-3">
+				<input type="hidden" name="socialsEdited" value="1" />
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label class="label" for="fn">First name</label>
+						<input id="fn" class="input" name="firstName" value={p.firstName} required />
+					</div>
+					<div>
+						<label class="label" for="ln">Last name</label>
+						<input id="ln" class="input" name="lastName" value={p.lastName} required />
+					</div>
+				</div>
+				<div>
+					<label class="label" for="hl">Headline</label>
+					<input
+						id="hl"
+						class="input"
+						name="headline"
+						value={p.headline ?? ''}
+						placeholder="ML engineer at Sber - IU BS'21"
+						maxlength="120"
+					/>
+				</div>
+				{#if p.alumni || data.viewerIsAdmin}
+					<div>
+						<label class="label" for="gy">Graduation year</label>
+						<input id="gy" class="input" type="number" name="graduationYear" min="2014" value={p.graduationYear ?? ''} />
+					</div>
+				{/if}
+				<div>
+					<label class="label" for="bd">Birthday</label>
+					<input id="bd" class="input" type="date" name="birthday" value={p.birthday ?? ''} />
+				</div>
+
+				<h3 class="pt-3 font-semibold">Location</h3>
+				<CityPicker
+					value={p.homeLocation
+						? { name: p.homeLocation.name, lat: p.homeLocation.lat, lng: p.homeLocation.lng }
+						: null}
+					placeholder="Where do you live?"
+				/>
+				<p class="text-xs text-zinc-500">
+					Everyone who adds a city is shown on the map. Only the city is shared, never your exact location.
+					Use the temporary location above when travelling.
+				</p>
+
+				<h3 class="pt-3 font-semibold">Social links</h3>
+				<div class="space-y-2">
+					{#each socials as _, i (i)}
+						<div class="flex items-center gap-2">
+							<span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600">
+								{#if socials[i]}<SocialIcon url={socials[i]} size={18} />{:else}<Link2 size={16} />{/if}
+							</span>
+							<input
+								class="input"
+								name="social"
+								bind:value={socials[i]}
+								placeholder="https://github.com/me"
+								autocomplete="off"
+								spellcheck="false"
+							/>
+							<button
+								type="button"
+								class="btn-ghost shrink-0"
+								onclick={() => socials.splice(i, 1)}
+								aria-label="Remove link"
+							>
+								<X size={17} />
+							</button>
+						</div>
+					{/each}
+					{#if socials.length < 10}
+						<button type="button" class="btn-secondary py-1.5" onclick={() => socials.push('')}>
+							<Plus size={15} />Add link
+						</button>
+					{/if}
+					<p class="text-xs text-zinc-500">
+						Paste any http(s) link. GitHub, LinkedIn, X, Telegram, Instagram and other well-known sites get
+						their icon automatically.
+					</p>
+				</div>
+				<FormActions onCancel={() => (editingHeader = false)} />
+			</form>
+		</Modal>
+
+		<Modal bind:open={changingPassword} title="Change password">
+			<form
+				method="POST"
+				action="?/changePassword"
+				use:enhance={submitThen(() => (changingPassword = false))}
+				class="space-y-3"
+			>
+				<input class="input" type="password" name="currentPassword" placeholder="Current password" autocomplete="current-password" required />
+				<input
+					class="input"
+					type="password"
+					name="newPassword"
+					placeholder="New password (8+ characters)"
+					autocomplete="new-password"
+					minlength="8"
+					required
+				/>
+				<input
+					class="input"
+					type="password"
+					name="newPasswordRepeat"
+					placeholder="Repeat new password"
+					autocomplete="new-password"
+					minlength="8"
+					required
+				/>
+				<FormActions onCancel={() => (changingPassword = false)} label="Change password" />
+			</form>
+		</Modal>
+
+		<Modal bind:open={changingEmail} title="Change main email">
+			<ChangeEmail
+				currentEmail={p.email ?? ''}
+				close={() => (changingEmail = false)}
+				onChanged={() => (changingEmail = false)}
+			/>
+		</Modal>
+	{/if}
 </div>

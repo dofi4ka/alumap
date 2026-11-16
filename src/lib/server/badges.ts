@@ -116,7 +116,8 @@ const targets = {
 const profileParts = sql`(
 	(u.avatar_id is not null)::int + (u.headline is not null)::int + (u.bio is not null)::int
 	+ (u.location_name is not null)::int + (u.birthday is not null)::int
-	+ (coalesce(u.telegram_username, u.contact_email, u.contact_phone, u.website) is not null)::int
+	+ (u.telegram_username is not null
+		or exists (select 1 from social_links s where s.user_id = u.id))::int
 	+ (exists (select 1 from experiences e where e.user_id = u.id))::int
 	+ (exists (select 1 from skills s where s.user_id = u.id))::int
 )`;
@@ -143,7 +144,7 @@ const criteria: Record<string, (now: string, badgeId: number) => SQL> = {
 	// whoever shares the location while fewer than 100 pioneers were granted (removed ones count too)
 	pioneer: (_, badgeId) => sql`
 		select id as user_id from users
-		where show_location = true and location_lat is not null
+		where location_lat is not null
 			and id not in (select user_id from user_badges where badge_id = ${badgeId})
 		order by id
 		limit greatest(0, 100 - (select count(*)::int from user_badges where badge_id = ${badgeId}))`,

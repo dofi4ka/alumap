@@ -17,14 +17,34 @@
 }
 
 @layer base {
+	:root {
+		/* Telegram Mini App viewport variables are bound by @tma.js/sdk; everything falls back to 0. */
+		--tg-inset-top: max(
+			env(safe-area-inset-top, 0px),
+			var(--tg-viewport-safe-area-inset-top, 0px),
+			var(--tg-viewport-content-safe-area-inset-top, 0px)
+		);
+		--tg-inset-bottom: max(
+			env(safe-area-inset-bottom, 0px),
+			var(--tg-viewport-safe-area-inset-bottom, 0px),
+			var(--tg-viewport-content-safe-area-inset-bottom, 0px)
+		);
+		--app-header-height: calc(3.5rem + var(--tg-inset-top));
+	}
 	html {
 		@apply bg-white text-zinc-900 antialiased;
 		-webkit-tap-highlight-color: transparent;
+		-webkit-text-size-adjust: 100%;
 		/* pages still scroll, the scrollbar is just hidden */
 		scrollbar-width: none;
+		overscroll-behavior-y: none;
 	}
 	html::-webkit-scrollbar {
 		display: none;
+	}
+	body {
+		/* no rubber-banding inside the Telegram webview */
+		overscroll-behavior-y: none;
 	}
 }
 

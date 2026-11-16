@@ -5,10 +5,11 @@
 	type Option = Place & { label: string };
 
 	let {
+		id,
 		value = null,
 		placeholder = 'Start typing a city…',
 		required = false
-	}: { value?: Place | null; placeholder?: string; required?: boolean } = $props();
+	}: { id?: string; value?: Place | null; placeholder?: string; required?: boolean } = $props();
 
 	// svelte-ignore state_referenced_locally
 	let selected = $state<Place | null>(value);
@@ -66,6 +67,7 @@
 	<div class="relative">
 		<MapPin size={18} class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-zinc-400" />
 		<input
+			{id}
 			class="input pr-9 pl-9"
 			bind:value={query}
 			oninput={onInput}

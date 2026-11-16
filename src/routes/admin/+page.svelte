@@ -13,15 +13,31 @@
 
 	let { data, form }: PageProps = $props();
 
-	const tabs = $derived([
-		{ id: 'users', label: 'New users to review', count: data.pendingUsers.length, review: true },
-		{ id: 'events', label: 'Events to review', count: data.pendingEvents.length, review: true },
-		{ id: 'projects', label: 'Projects to review', count: data.pendingProjects.length, review: true },
-		{ id: 'all-users', label: 'Users list', count: data.users.length, review: false },
-		{ id: 'badges', label: 'Badges', count: data.badges.length, review: false },
-		{ id: 'about', label: 'About page', count: undefined, review: false }
+	const groups = $derived([
+		{
+			id: 'review',
+			label: 'Needs review',
+			pending: data.pendingUsers.length + data.pendingEvents.length + data.pendingProjects.length,
+			tabs: [
+				{ id: 'users', label: 'New users', count: data.pendingUsers.length, review: true },
+				{ id: 'events', label: 'Events', count: data.pendingEvents.length, review: true },
+				{ id: 'projects', label: 'Projects', count: data.pendingProjects.length, review: true }
+			]
+		},
+		{
+			id: 'manage',
+			label: 'Manage',
+			pending: 0,
+			tabs: [
+				{ id: 'all-users', label: 'All users', count: data.users.length, review: false },
+				{ id: 'badges', label: 'Badges', count: data.badges.length, review: false },
+				{ id: 'about', label: 'About page', count: undefined, review: false }
+			]
+		}
 	]);
-	const tab = $derived(page.url.searchParams.get('tab') ?? 'users');
+	const allTabs = $derived(groups.flatMap((g) => g.tabs));
+	const rawTab = $derived(page.url.searchParams.get('tab') ?? 'users');
+	const tab = $derived(allTabs.some((t) => t.id === rawTab) ? rawTab : 'users');
 	let filter = $state('');
 	/** badge form popup: 'new', a badge id, or closed */
 	let editingBadge = $state<'new' | number | null>(null);
@@ -35,31 +51,57 @@
 			`${u.firstName} ${u.lastName} ${u.email}`.toLowerCase().includes(filter.toLowerCase())
 		)
 	);
-	const kind = (u: { graduationYear: number | null }) =>
-		u.graduationYear ? `Alumni ’${String(u.graduationYear).slice(2)}` : 'Friend';
+	const kind = (u: { ssoEmail: string | null; graduationYear: number | null }) =>
+		u.ssoEmail
+			? `IU alumni${u.graduationYear ? ` ’${String(u.graduationYear).slice(2)}` : ''}`
+			: 'IU Friend';
 </script>
 
 <svelte:head><title>Alumap - Admin</title></svelte:head>
 
 <h1 class="mb-5 text-2xl font-bold tracking-tight">Admin</h1>
 
-<nav class="-mx-4 mb-6 flex gap-1 overflow-x-auto px-4 [scrollbar-width:none]">
-	{#each tabs as t (t.id)}
-		<a
-			href="?tab={t.id}"
-			data-sveltekit-noscroll
-			data-sveltekit-replacestate
-			class="flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium {tab === t.id
-				? 'bg-brand-50 text-brand-700'
-				: 'text-zinc-600 hover:bg-zinc-100'}"
-		>
-			{t.label}
-			{#if t.count !== undefined}
-				<span class="rounded-full px-1.5 text-xs {t.count && t.review ? 'bg-brand-500 text-white' : 'bg-zinc-100 text-zinc-500'}">{t.count}</span>
-			{/if}
-		</a>
-	{/each}
-</nav>
+<div class="md:grid md:grid-cols-[15rem_minmax(0,1fr)] md:items-start md:gap-6">
+	<aside class="mb-5 md:sticky md:top-20 md:mb-0">
+		<nav class="space-y-4">
+			{#each groups as group (group.id)}
+				<div>
+					<div class="mb-1.5 flex items-center justify-between gap-2 px-2">
+						<p class="text-[11px] font-semibold tracking-wide text-zinc-400 uppercase">{group.label}</p>
+						{#if group.id === 'review' && group.pending > 0}
+							<span class="rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+								{group.pending}
+							</span>
+						{/if}
+					</div>
+					<div class="flex flex-wrap gap-1 md:flex-col md:gap-0.5">
+						{#each group.tabs as t (t.id)}
+							<a
+								href="?tab={t.id}"
+								data-sveltekit-noscroll
+								data-sveltekit-replacestate
+								aria-current={tab === t.id ? 'page' : undefined}
+								class="flex items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-medium {tab === t.id
+									? 'bg-brand-50 text-brand-700'
+									: 'text-zinc-600 hover:bg-zinc-100'}"
+							>
+								<span class="flex-1">{t.label}</span>
+								{#if t.count !== undefined}
+									<span
+										class="rounded-full px-1.5 text-xs {t.count && t.review
+											? 'bg-brand-500 text-white'
+											: 'bg-zinc-100 text-zinc-500'}">{t.count}</span
+									>
+								{/if}
+							</a>
+						{/each}
+					</div>
+				</div>
+			{/each}
+		</nav>
+	</aside>
+
+	<div class="min-w-0">
 
 {#if tab === 'users'}
 <section class="mb-8">
@@ -262,3 +304,5 @@
 	</div>
 </section>
 {/if}
+	</div>
+</div>

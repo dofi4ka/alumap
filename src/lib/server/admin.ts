@@ -1,8 +1,17 @@
 import { and, eq } from 'drizzle-orm';
 import { db, events, users } from './db/index.ts';
+import { notifyAppearance } from './notifications.ts';
 
 export const approveUser = async (id: number) => {
-	await db.update(users).set({ isApproved: true }).where(eq(users.id, id));
+	const user = (await db.select().from(users).where(eq(users.id, id)))[0];
+	if (!user) return;
+	const [approved] = await db
+		.update(users)
+		.set({ isApproved: true })
+		.where(eq(users.id, id))
+		.returning();
+	// Only the first approval is a new appearance in a city.
+	if (approved && !user.isApproved) await notifyAppearance(approved);
 };
 
 /** Admins cannot be banned (and cannot manage other admins at all). */

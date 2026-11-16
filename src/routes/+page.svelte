@@ -13,6 +13,9 @@
 
 <svelte:head><title>Alumap</title></svelte:head>
 
-<div class="fixed inset-x-0 top-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] md:top-14 md:bottom-0">
+<div
+	class="fixed inset-x-0 top-14 bottom-[calc(4rem+var(--tg-inset-bottom))] md:bottom-0"
+	style="top: var(--app-header-height);"
+>
 	<GlobeMap {center} {zoom} />
 </div>

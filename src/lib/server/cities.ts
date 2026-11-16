@@ -125,3 +125,20 @@ const byCoords = new Map(cities.map((c) => [`${c.lat},${c.lng}`, c]));
 
 /** Population of the city picked in CityPicker (coordinates are copied from the dataset as is). */
 export const populationAt = (lat: number, lng: number) => byCoords.get(`${lat},${lng}`)?.population;
+
+/** Closest city to a point, used for locations sent to the Telegram bot. */
+export function nearestCity(lat: number, lng: number): City {
+	const cos = Math.cos((lat * Math.PI) / 180);
+	let best = cities[0];
+	let bestDistance = Infinity;
+	for (const city of cities) {
+		const dLat = city.lat - lat;
+		const dLng = (city.lng - lng) * cos;
+		const distance = dLat * dLat + dLng * dLng;
+		if (distance < bestDistance) {
+			bestDistance = distance;
+			best = city;
+		}
+	}
+	return best;
+}

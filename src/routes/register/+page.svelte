@@ -1,15 +1,29 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import AuthShell from '#lib/components/AuthShell.svelte';
+	import CodeInput from '#lib/components/CodeInput.svelte';
+	import { isAlumniEmail } from '#lib/emails.ts';
 	import type { PageProps } from './$types';
 
 	let { form }: PageProps = $props();
-	// svelte-ignore state_referenced_locally
-	let kind = $state<'alumni' | 'friend'>(form && 'kind' in form && form.kind === 'friend' ? 'friend' : 'alumni');
 	let pending = $state(false);
+	// svelte-ignore state_referenced_locally
+	let email = $state((form && 'email' in form ? form.email : '') ?? '');
+	// svelte-ignore state_referenced_locally
+	let firstName = $state((form && 'firstName' in form ? form.firstName : '') ?? '');
+	// svelte-ignore state_referenced_locally
+	let lastName = $state((form && 'lastName' in form ? form.lastName : '') ?? '');
 
 	const verifying = $derived(form?.step === 'verify');
-	const v = $derived(form && 'firstName' in form ? form : null);
+	const usesInnopolisEmail = $derived(isAlumniEmail(email));
+
+	// Restore the fields after a validation error.
+	$effect(() => {
+		if (!form) return;
+		if ('email' in form && form.email) email = form.email;
+		if ('firstName' in form && form.firstName) firstName = form.firstName;
+		if ('lastName' in form && form.lastName) lastName = form.lastName;
+	});
 
 	const submit = () => {
 		pending = true;
@@ -21,18 +35,10 @@
 </script>
 
 {#if verifying && form}
-	<AuthShell title="Check your email" subtitle="We sent a 6-digit code to {form.email}">
+	<AuthShell title="Check your personal email" subtitle="We sent a 6-digit code to {form.email}">
 		<form method="POST" action="?/verify" class="space-y-3" use:enhance={submit}>
 			<input type="hidden" name="email" value={form.email} />
-			<input
-				class="input text-center text-2xl tracking-[0.5em]"
-				name="code"
-				inputmode="numeric"
-				autocomplete="one-time-code"
-				maxlength="6"
-				placeholder="000000"
-				required
-			/>
+			<CodeInput autofocus />
 			{#if form.error}<p class="error-box">{form.error}</p>{/if}
 			{#if 'resent' in form && form.resent}<p class="text-center text-sm text-brand-700">New code sent</p>{/if}
 			<button class="btn-primary w-full" disabled={pending}>Confirm</button>
@@ -43,46 +49,70 @@
 		</form>
 	</AuthShell>
 {:else}
-	<AuthShell title="Create an account" subtitle="Alumap is a networking portal for Innopolis University graduates and their friends">
-		<div class="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-zinc-100 p-1 text-sm font-semibold">
-			{#each [['alumni', 'IU alumni'], ['friend', "Alumni's friend"]] as [k, label] (k)}
-				<button
-					type="button"
-					class="rounded-lg py-2 transition {kind === k ? 'bg-white shadow-sm' : 'text-zinc-500'}"
-					onclick={() => (kind = k as typeof kind)}>{label}</button
-				>
-			{/each}
+	<AuthShell
+		title="Create an account"
+		subtitle="Alumap is the map of Innopolis University alumni and their friends"
+	>
+		<div class="mb-5 flex items-center gap-2 text-xs font-medium text-zinc-500">
+			<span class="flex size-5 items-center justify-center rounded-full bg-brand-500 text-white">1</span>
+			Personal email
+			<span class="h-px flex-1 bg-zinc-200"></span>
+			<span class="flex size-5 items-center justify-center rounded-full bg-zinc-100">2</span>
+			Innopolis email
 		</div>
 
 		<form method="POST" action="?/start" class="space-y-3" use:enhance={submit}>
-			<input type="hidden" name="kind" value={kind} />
 			<input
 				class="input"
 				type="email"
 				name="email"
 				autocomplete="email"
-				placeholder={kind === 'alumni' ? 'you@innopolis.university' : 'Email'}
-				value={v?.email ?? ''}
+				placeholder="Personal email"
+				bind:value={email}
 				required
 			/>
+			{#if usesInnopolisEmail}
+				<p class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+					This looks like your Innopolis address. Please use a personal email (Gmail, Yandex, etc.) — you
+					will add and verify your @innopolis.university email in step 2.
+				</p>
+			{/if}
 			<div class="grid grid-cols-2 gap-3">
-				<input class="input" name="firstName" placeholder="First name" autocomplete="given-name" value={v?.firstName ?? ''} required />
-				<input class="input" name="lastName" placeholder="Last name" autocomplete="family-name" value={v?.lastName ?? ''} required />
-			</div>
-			{#if kind === 'alumni'}
 				<input
 					class="input"
-					type="number"
-					name="graduationYear"
-					min="2014"
-					max={new Date().getFullYear() + 1}
-					placeholder="Graduation year"
-					value={v?.graduationYear ?? ''}
+					name="firstName"
+					placeholder="First name"
+					autocomplete="given-name"
+					bind:value={firstName}
 					required
 				/>
-			{/if}
-			<input class="input" type="password" name="password" placeholder="Password (8+ characters)" autocomplete="new-password" minlength="8" required />
-			<input class="input" type="password" name="passwordRepeat" placeholder="Repeat password" autocomplete="new-password" minlength="8" required />
+				<input
+					class="input"
+					name="lastName"
+					placeholder="Last name"
+					autocomplete="family-name"
+					bind:value={lastName}
+					required
+				/>
+			</div>
+			<input
+				class="input"
+				type="password"
+				name="password"
+				placeholder="Password (8+ characters)"
+				autocomplete="new-password"
+				minlength="8"
+				required
+			/>
+			<input
+				class="input"
+				type="password"
+				name="passwordRepeat"
+				placeholder="Repeat password"
+				autocomplete="new-password"
+				minlength="8"
+				required
+			/>
 			{#if form?.error}<p class="error-box">{form.error}</p>{/if}
 			<button class="btn-primary w-full" disabled={pending}>Continue</button>
 		</form>

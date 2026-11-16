@@ -10,15 +10,42 @@ const transport = env.smtp.host
 		})
 	: null;
 
-export async function sendVerificationCode(to: string, code: string) {
+export type CodePurpose = 'registration' | 'password-reset' | 'sso-verify' | 'email-change';
+
+const codeSubject: Record<CodePurpose, string> = {
+	registration: 'Confirm your email',
+	'password-reset': 'Reset your password',
+	'sso-verify': 'Verify your Innopolis email',
+	'email-change': 'Confirm your new email'
+};
+
+const codeReason: Record<CodePurpose, string> = {
+	registration: 'Finish creating your Alumap account.',
+	'password-reset': 'Use it to choose a new password. If you did not ask for a reset, ignore this email.',
+	'sso-verify': 'Use it to confirm that this Innopolis address belongs to you.',
+	'email-change': 'Use it to make this address the main email of your Alumap account.'
+};
+
+export async function sendMail(to: string, subject: string, text: string) {
 	if (!transport) {
-		console.log(`[email] SMTP is not configured. Verification code for ${to}: ${code}`);
+		console.log(`[email] SMTP is not configured. Message for ${to}: ${subject}\n${text}`);
 		return;
 	}
-	await transport.sendMail({
-		from: env.smtp.from,
+	await transport.sendMail({ from: env.smtp.from, to, subject, text });
+}
+
+export async function sendVerificationCode(to: string, code: string, purpose: CodePurpose = 'registration') {
+	await sendMail(
 		to,
-		subject: `Alumap verification code: ${code}`,
-		text: `Your Alumap verification code is ${code}\n\nIt is valid for 15 minutes.`
-	});
+		`Alumap: ${codeSubject[purpose].toLowerCase()}`,
+		`Your Alumap verification code is ${code}\n\n${codeReason[purpose]}\n\nIt is valid for 15 minutes.`
+	);
+}
+
+export async function sendNotificationEmail(to: string, message: string, link?: string) {
+	await sendMail(
+		to,
+		'Alumap: an alum is nearby',
+		`${message}\n${link ? `\nOpen their profile: ${link}\n` : ''}\nYou receive this because you follow a city nearby in Alumap notifications.`
+	);
 }

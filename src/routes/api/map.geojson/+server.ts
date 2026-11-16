@@ -1,7 +1,8 @@
 import { json } from '@sveltejs/kit';
-import { and, eq, gte, isNotNull } from 'drizzle-orm';
+import { and, eq, gte } from 'drizzle-orm';
 import { db, events, users } from '#lib/server/db/index.ts';
 import { imageUrl } from '#lib/images.ts';
+import { effectiveLocation } from '#lib/server/geo.ts';
 import { scatterInCities } from '#lib/server/scatter.ts';
 import type { RequestHandler } from './$types';
 
@@ -24,15 +25,13 @@ export const GET: RequestHandler = async () => {
 	const people = await db
 		.select()
 		.from(users)
-		.where(
-			and(
-				eq(users.showLocation, true),
-				eq(users.isApproved, true),
-				eq(users.isBanned, false),
-				isNotNull(users.locationLat),
-				isNotNull(users.locationLng)
-			)
-		);
+		.where(and(eq(users.isApproved, true), eq(users.isBanned, false)));
+
+	// a temporary location shadows the home city while it lasts
+	const locatedPeople = people.flatMap((u) => {
+		const location = effectiveLocation(u);
+		return location ? [{ user: u, location }] : [];
+	});
 
 	// only upcoming events (with a day of slack, see isPastEvent)
 	const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 16);
@@ -42,15 +41,15 @@ export const GET: RequestHandler = async () => {
 		.where(and(eq(events.status, 'published'), gte(events.startsAt, since)));
 
 	const items = [
-		...people.map((u) => ({
+		...locatedPeople.map(({ user: u, location }) => ({
 			key: `user:${u.id}`,
-			lat: u.locationLat!,
-			lng: u.locationLng!,
+			lat: location.lat,
+			lng: location.lng,
 			props: {
 				kind: 'user',
 				id: u.nanoId,
 				title: `${u.firstName} ${u.lastName}`,
-				subtitle: u.headline ?? u.locationName ?? '',
+				subtitle: u.headline ?? location.name,
 				icon: u.avatarId
 					? `img:${imageUrl(u.avatarId, true)}`
 					: `initials:${(u.firstName[0] + u.lastName[0]).toUpperCase()}`

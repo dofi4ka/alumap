@@ -1,13 +1,40 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { approveUser, setBanned } from '#lib/server/admin.ts';
 import { checkPassword, hashPassword } from '#lib/server/auth.ts';
-import { badges, db, experiences, skills, userBadges, users, type User } from '#lib/server/db/index.ts';
+import { isAlumniEmail } from '#lib/emails.ts';
+import {
+	badges,
+	db,
+	experiences,
+	referralCopies,
+	referrals,
+	skills,
+	socialLinks,
+	userBadges,
+	users,
+	type User
+} from '#lib/server/db/index.ts';
 import { badgeProgress, giveBadge, removeBadge } from '#lib/server/badges.ts';
+import { sendVerificationCode } from '#lib/server/email.ts';
 import { DAY, int, isDate, location, oneOf, str, yearMonth } from '#lib/server/forms.ts';
 import { employmentTypes, locationTypes } from '#lib/format.ts';
+import { effectiveLocation, homeLocation, temporaryLocation } from '#lib/server/geo.ts';
 import { deleteImage, saveImage } from '#lib/server/images.ts';
+import {
+	clearTemporaryLocation,
+	pruneExpiredTemporary,
+	setTemporaryLocation,
+	updateHomeLocation
+} from '#lib/server/locations.ts';
+import { normalizeUrl } from '#lib/socials.ts';
 import { createLinkToken, getBotUsername } from '#lib/server/telegram.ts';
+import {
+	deleteUserCode,
+	findUserCode,
+	issueUserCode,
+	verifyUserCode
+} from '#lib/server/user-codes.ts';
 import type { Actions, PageServerLoad, RequestEvent } from './$types';
 
 /** All badges, earned first (gold first), each with the user's progress where it is countable. */
@@ -45,19 +72,42 @@ async function getTarget(id: string) {
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const me = locals.user!;
-	const u = await getTarget(params.id);
-	const isSelf = u.id === me.id;
-	if (!isSelf && !me.isAdmin && (!u.isApproved || u.isBanned)) error(404, 'User not found');
+	const target = await getTarget(params.id);
+	const isSelf = target.id === me.id;
+	if (!isSelf && !me.isAdmin && (!target.isApproved || target.isBanned))
+		error(404, 'User not found');
 
-	const [userExperiences, badgeList, skillRows] = await Promise.all([
+	const u = await pruneExpiredTemporary(target);
+	// private contact details only for the owner and admins
+	const canSeePrivate = isSelf || me.isAdmin;
+
+	const [userExperiences, badgeList, skillRows, socialRows, referralRows] = await Promise.all([
 		db
 			.select()
 			.from(experiences)
 			.where(eq(experiences.userId, u.id))
 			.orderBy(sql`${experiences.endDate} is not null`, desc(experiences.endDate), desc(experiences.startDate)),
 		userBadgeList(u.id),
-		db.select({ name: skills.name }).from(skills).where(eq(skills.userId, u.id)).orderBy(asc(skills.name))
+		db.select({ name: skills.name }).from(skills).where(eq(skills.userId, u.id)).orderBy(asc(skills.name)),
+		db.select({ url: socialLinks.url }).from(socialLinks).where(eq(socialLinks.userId, u.id)).orderBy(asc(socialLinks.id)),
+		db
+			.select({ id: referrals.id, company: referrals.company, url: referrals.url })
+			.from(referrals)
+			.where(eq(referrals.userId, u.id))
+			.orderBy(asc(referrals.id))
 	]);
+
+	const copies =
+		referralRows.length > 0
+			? await db
+					.select({ referralId: referralCopies.referralId, count: sql<number>`count(*)::int` })
+					.from(referralCopies)
+					.where(inArray(referralCopies.referralId, referralRows.map((r) => r.id)))
+					.groupBy(referralCopies.referralId)
+			: [];
+	const copiesByReferral = new Map(copies.map((c) => [c.referralId, Number(c.count)]));
+	const effective = effectiveLocation(u);
+	const temp = temporaryLocation(u);
 
 	return {
 		profile: {
@@ -72,15 +122,23 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			birthday: u.birthday,
 			telegramUsername: u.telegramUsername,
 			telegramConnected: u.telegramId !== null,
-			contactEmail: u.contactEmail,
-			contactPhone: u.contactPhone,
-			website: u.website,
-			locationName: u.locationName,
-			locationLat: u.locationLat,
-			locationLng: u.locationLng,
-			showLocation: u.showLocation,
+			socialLinks: socialRows.map((r) => r.url),
+			referrals: referralRows.map((r) => ({
+				id: r.id,
+				company: r.company,
+				// The link is revealed only by the Copy action, never in the page data.
+				url: isSelf ? r.url : null,
+				copies: copiesByReferral.get(r.id) ?? 0
+			})),
+			alumni: !!u.ssoEmail,
+			ssoEmail: canSeePrivate ? u.ssoEmail : null,
+			location: effective,
+			homeLocation: homeLocation(u),
+			temporaryLocation: temp && u.temporaryLocationExpiresAt
+				? { ...temp, expiresAt: u.temporaryLocationExpiresAt }
+				: null,
 			// private stuff only for the owner and admins
-			email: isSelf || me.isAdmin ? u.email : null,
+			email: canSeePrivate ? u.email : null,
 			isApproved: u.isApproved,
 			isBanned: u.isBanned,
 			isAdmin: u.isAdmin
@@ -112,8 +170,45 @@ const update = async (id: number, values: Partial<User>) => {
 	await db.update(users).set(values).where(eq(users.id, id));
 };
 
-const normalizeUrl = (url: string | null) =>
-	url && !/^https?:\/\//i.test(url) ? `https://${url}` : url;
+/** Validates social links: http(s), no duplicates, at most 10. */
+function parseSocialLinks(fd: FormData): { urls: string[]; error?: string } {
+	const urls: string[] = [];
+	for (const raw of fd.getAll('social')) {
+		if (typeof raw !== 'string' || !raw.trim()) continue;
+		if (urls.length >= 10) return { urls, error: 'You can add up to 10 links' };
+		const url = normalizeUrl(raw.trim())!;
+		if (url.length > 300) return { urls, error: 'A link is too long' };
+		let parsed: URL;
+		try {
+			parsed = new URL(url);
+		} catch {
+			return { urls, error: `"${raw}" is not a valid link` };
+		}
+		if (!/^https?:$/.test(parsed.protocol))
+			return { urls, error: 'Only http(s) links are supported' };
+		if (!urls.includes(url)) urls.push(url);
+	}
+	return { urls };
+}
+
+async function replaceSocialLinks(userId: number, urls: string[]) {
+	await db.transaction(async (tx) => {
+		await tx.delete(socialLinks).where(eq(socialLinks.userId, userId));
+		if (urls.length) await tx.insert(socialLinks).values(urls.map((url) => ({ userId, url })));
+	});
+}
+
+const referralUrl = (raw: string | null) => {
+	if (!raw) return null;
+	const url = normalizeUrl(raw);
+	if (!url || url.length > 500) return null;
+	try {
+		const parsed = new URL(url);
+		return /^https?:$/.test(parsed.protocol) ? url : null;
+	} catch {
+		return null;
+	}
+};
 
 export const actions: Actions = {
 	basic: async (event) => {
@@ -126,29 +221,28 @@ export const actions: Actions = {
 		if (!isDate(birthday, DAY)) return fail(400, { error: 'Invalid birthday' });
 
 		let graduationYear = target.graduationYear;
-		// alumni can change their year, friends stay friends (unless admin decides otherwise)
-		if (target.graduationYear !== null || event.locals.user!.isAdmin) {
+		// IU alumni can change their year; IU friends stay friends (unless an admin decides otherwise)
+		if (target.ssoEmail || event.locals.user!.isAdmin) {
 			graduationYear = int(fd, 'graduationYear');
 			if (graduationYear !== null && (graduationYear < 2014 || graduationYear > new Date().getFullYear() + 1))
 				return fail(400, { error: 'Invalid graduation year' });
 		}
 
+		const socialsEdited = fd.get('socialsEdited') === '1';
+		const socials = socialsEdited ? parseSocialLinks(fd) : null;
+		if (socials?.error) return fail(400, { error: socials.error });
+
 		const loc = location(fd);
+		const city = loc ? { name: loc.locationName, lat: loc.locationLat, lng: loc.locationLng } : null;
 		await update(target.id, {
 			firstName,
 			lastName,
 			graduationYear,
 			birthday,
-			headline: str(fd, 'headline', 120),
-			locationName: loc?.locationName ?? null,
-			locationLat: loc?.locationLat ?? null,
-			locationLng: loc?.locationLng ?? null,
-			showLocation: !!loc && fd.get('showLocation') === 'on',
-			telegramUsername: str(fd, 'telegramUsername', 40)?.replace(/^@/, '') ?? null,
-			contactEmail: str(fd, 'contactEmail', 120),
-			contactPhone: str(fd, 'contactPhone', 40),
-			website: normalizeUrl(str(fd, 'website', 200))
+			headline: str(fd, 'headline', 120)
 		});
+		if (socials) await replaceSocialLinks(target.id, socials.urls);
+		await updateHomeLocation({ ...target, firstName, lastName }, city);
 	},
 
 	about: async (event) => {
@@ -229,6 +323,154 @@ export const actions: Actions = {
 		if (name) await db.delete(skills).where(and(eq(skills.userId, target.id), eq(skills.name, name)));
 	},
 
+	saveReferral: async (event) => {
+		const target = await editable(event);
+		const fd = await event.request.formData();
+		const id = int(fd, 'id');
+		const company = str(fd, 'company', 80);
+		const url = referralUrl(str(fd, 'url', 500));
+		if (!company || !url) return fail(400, { error: 'Enter a company and a valid http(s) link' });
+		if (id) {
+			await db
+				.update(referrals)
+				.set({ company, url })
+				.where(and(eq(referrals.id, id), eq(referrals.userId, target.id)));
+		} else {
+			const count = await db.$count(referrals, eq(referrals.userId, target.id));
+			if (count >= 10) return fail(400, { error: 'You can add up to 10 referrals' });
+			await db.insert(referrals).values({ userId: target.id, company, url });
+		}
+	},
+
+	deleteReferral: async (event) => {
+		const target = await editable(event);
+		const id = int(await event.request.formData(), 'id');
+		if (id) {
+			await db.delete(referrals).where(and(eq(referrals.id, id), eq(referrals.userId, target.id)));
+		}
+	},
+
+	/** Reveals one referral link to a visitor and records the unique copy. */
+	copyReferral: async (event) => {
+		const id = int(await event.request.formData(), 'id');
+		if (!id) return fail(400, { error: 'Missing referral' });
+		const referral = (await db.select().from(referrals).where(eq(referrals.id, id)))[0];
+		if (!referral) return fail(404, { error: 'This referral no longer exists' });
+		await db
+			.insert(referralCopies)
+			.values({ referralId: referral.id, userId: event.locals.user!.id })
+			.onConflictDoNothing();
+		return { url: referral.url };
+	},
+
+	temporaryLocation: async (event) => {
+		const target = await editable(event);
+		const fd = await event.request.formData();
+		const loc = location(fd);
+		if (!loc) return fail(400, { error: 'Pick a city from the list' });
+		const duration = str(fd, 'duration', 10) ?? '';
+		const result = await setTemporaryLocation(
+			target.id,
+			{ name: loc.locationName, lat: loc.locationLat, lng: loc.locationLng },
+			duration
+		);
+		if (!result.ok) return fail(400, { error: result.error });
+	},
+
+	clearTemporaryLocation: async (event) => {
+		const target = await editable(event);
+		await clearTemporaryLocation(target.id);
+	},
+
+	changeEmail: async ({ request, locals, params }) => {
+		const me = locals.user!;
+		if (me.nanoId !== params.id) error(403, 'Forbidden');
+		const fd = await request.formData();
+		const email = str(fd, 'email')?.toLowerCase() ?? '';
+		if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
+			return fail(400, { error: 'Enter a valid email', step: 'email' });
+		if (isAlumniEmail(email))
+			return fail(400, {
+				error: 'Use a personal email here. Your Innopolis email is verified separately.',
+				step: 'email'
+			});
+		if (email === me.email) return fail(400, { error: 'This is already your main email', step: 'email' });
+		const taken = (await db.select({ id: users.id }).from(users).where(eq(users.email, email)))[0];
+		if (taken) return fail(400, { error: 'This email is already used by another account', step: 'email' });
+
+		const code = await issueUserCode({ userId: me.id, purpose: 'email-change', email });
+		try {
+			await sendVerificationCode(email, code, 'email-change');
+		} catch (e) {
+			console.error('[email change]', e);
+			return fail(400, { error: 'Could not send the email, try again later', step: 'email' });
+		}
+		return { step: 'verify' as const, email };
+	},
+
+	resendEmailCode: async ({ locals, params }) => {
+		const me = locals.user!;
+		if (me.nanoId !== params.id) error(403, 'Forbidden');
+		const stored = await findUserCode(me.id, 'email-change');
+		if (!stored) return fail(400, { error: 'Enter the new email again', step: 'email' });
+		const code = await issueUserCode({
+			userId: me.id,
+			purpose: 'email-change',
+			email: stored.email
+		});
+		try {
+			await sendVerificationCode(stored.email, code, 'email-change');
+		} catch (e) {
+			console.error('[email change]', e);
+			return fail(400, {
+				error: 'Could not send the email, try again later',
+				step: 'verify',
+				email: stored.email
+			});
+		}
+		return { step: 'verify' as const, email: stored.email, resent: true };
+	},
+
+	verifyEmailCode: async ({ request, locals, params }) => {
+		const me = locals.user!;
+		if (me.nanoId !== params.id) error(403, 'Forbidden');
+		const fd = await request.formData();
+		const stored = await findUserCode(me.id, 'email-change');
+		const check = await verifyUserCode(me.id, 'email-change', str(fd, 'code', 10));
+		if (!check.ok)
+			return fail(400, {
+				error: check.error,
+				step: 'verify',
+				email: stored?.email
+			});
+
+		const email = check.code.email;
+		const taken = (
+			await db
+				.select({ id: users.id })
+				.from(users)
+				.where(and(eq(users.email, email), ne(users.id, me.id)))
+		)[0];
+		if (taken)
+			return fail(400, {
+				error: 'This email is already used by another account',
+				step: 'verify',
+				email
+			});
+		try {
+			await db.update(users).set({ email }).where(eq(users.id, me.id));
+		} catch (e) {
+			console.error('[email change]', e);
+			return fail(400, {
+				error: 'This email is already used by another account',
+				step: 'verify',
+				email
+			});
+		}
+		await deleteUserCode(me.id, 'email-change');
+		return { emailChanged: true };
+	},
+
 	connectTelegram: async ({ locals, params }) => {
 		const me = locals.user!;
 		if (me.nanoId !== params.id) error(403, 'Forbidden');
@@ -253,7 +495,7 @@ export const actions: Actions = {
 
 	disconnectTelegram: async (event) => {
 		const target = await editable(event);
-		await update(target.id, { telegramId: null });
+		await update(target.id, { telegramId: null, telegramUsername: null });
 	},
 
 	approve: async (event) => {

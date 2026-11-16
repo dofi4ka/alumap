@@ -65,12 +65,17 @@ await sql.begin(async (tx) => {
 		for (let k = 0; k < count; k++, i++) {
 			const first = pick(firstNames, i * 7 + 3);
 			const last = pick(lastNames, i * 5 + 1);
-			await tx`
+			const [created] = await tx`
 				insert into users (nano_id, email, password_hash, first_name, last_name, graduation_year, headline,
-					location_name, location_lat, location_lng, show_location, is_approved)
+					location_name, location_lat, location_lng, is_approved)
 				values (${nanoId()}, ${`demo${i + 1}@seed.alumap`}, ${passwordHash}, ${first}, ${last},
 					${i % 4 === 3 ? null : 2016 + (i % 10)}, ${`${pick(headlines, i)} at ${pick(companies, i * 3)}`},
-					${city}, ${lat}, ${lng}, true, true)`;
+					${city}, ${lat}, ${lng}, true)
+				returning id`;
+			await tx`
+				insert into followed_cities (user_id, name, lat, lng, source, enabled)
+				values (${created.id}, ${city}, ${lat}, ${lng}, 'location', true)
+				on conflict (user_id, lat, lng) do nothing`;
 			inserted++;
 		}
 	}

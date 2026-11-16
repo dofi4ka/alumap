@@ -16,6 +16,7 @@ const userColumns = {
 	firstName: users.firstName,
 	lastName: users.lastName,
 	email: users.email,
+	ssoEmail: users.ssoEmail,
 	avatarId: users.avatarId,
 	graduationYear: users.graduationYear,
 	isApproved: users.isApproved,

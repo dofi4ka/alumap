@@ -48,5 +48,4 @@ export async function destroySession(cookies: Cookies) {
 	await db.delete(sessions).where(lt(sessions.expiresAt, new Date()));
 }
 
-export const isAlumniEmail = (email: string) =>
-	/@innopolis\.(university|ru)$/i.test(email.trim());
+export { isAlumniEmail } from '../emails.ts';

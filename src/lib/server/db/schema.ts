@@ -8,7 +8,8 @@ import {
 	primaryKey,
 	serial,
 	text,
-	timestamp
+	timestamp,
+	uniqueIndex
 } from 'drizzle-orm/pg-core';
 
 const createdAt = () => timestamp({ withTimezone: true }).notNull().defaultNow();
@@ -17,12 +18,15 @@ export const users = pgTable('users', {
 	id: serial().primaryKey(),
 	nanoId: text().notNull().unique(),
 
+	/** Main personal email: used to log in, for password resets and notifications. */
 	email: text().notNull().unique(),
+	/** Verified Innopolis email. Null for IU friends, not null means IU alumni. */
+	ssoEmail: text().unique(),
 	passwordHash: text().notNull(),
 
 	firstName: text().notNull(),
 	lastName: text().notNull(),
-	/** null for alumni's friends */
+	/** null for IU friends */
 	graduationYear: integer(),
 	headline: text(),
 	bio: text(),
@@ -31,15 +35,18 @@ export const users = pgTable('users', {
 	birthday: text(),
 
 	telegramId: bigint({ mode: 'number' }).unique(),
+	/** Kept in sync by the bot whenever the user sends it a message. */
 	telegramUsername: text(),
-	contactEmail: text(),
-	contactPhone: text(),
-	website: text(),
 
 	locationName: text(),
 	locationLat: doublePrecision(),
 	locationLng: doublePrecision(),
-	showLocation: boolean().notNull().default(false),
+
+	/** Shadows the main location while `temporaryLocationExpiresAt` is in the future. */
+	temporaryLocationName: text(),
+	temporaryLocationLat: doublePrecision(),
+	temporaryLocationLng: doublePrecision(),
+	temporaryLocationExpiresAt: timestamp({ withTimezone: true }),
 
 	isApproved: boolean().notNull().default(false),
 	isBanned: boolean().notNull().default(false),
@@ -176,7 +183,7 @@ export const sessions = pgTable('sessions', {
 	expiresAt: timestamp({ withTimezone: true }).notNull()
 });
 
-/** Registrations waiting for email code confirmation */
+/** Registrations waiting for personal email code confirmation */
 export const pendingRegistrations = pgTable('pending_registrations', {
 	id: serial().primaryKey(),
 	email: text().notNull().unique(),
@@ -185,9 +192,32 @@ export const pendingRegistrations = pgTable('pending_registrations', {
 	passwordHash: text().notNull(),
 	firstName: text().notNull(),
 	lastName: text().notNull(),
-	graduationYear: integer(),
 	expiresAt: timestamp({ withTimezone: true }).notNull()
 });
+
+/**
+ * One-time codes for actions of an existing user: password reset, IU alumni verification
+ * and changing the main email. One active code per purpose per user.
+ */
+export const userCodes = pgTable(
+	'user_codes',
+	{
+		id: serial().primaryKey(),
+		userId: integer()
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		purpose: text({ enum: ['password-reset', 'sso-verify', 'email-change'] }).notNull(),
+		/** Address the code was sent to */
+		email: text().notNull(),
+		/** For sso-verify: the graduation year entered together with the email */
+		graduationYear: integer(),
+		codeHash: text().notNull(),
+		attempts: integer().notNull().default(0),
+		expiresAt: timestamp({ withTimezone: true }).notNull(),
+		createdAt: createdAt()
+	},
+	(t) => [uniqueIndex('user_codes_user_purpose_idx').on(t.userId, t.purpose)]
+);
 
 /** One-time tokens for linking telegram account via bot deep link */
 export const telegramLinkTokens = pgTable('telegram_link_tokens', {
@@ -240,3 +270,98 @@ export type Experience = typeof experiences.$inferSelect;
 export type Badge = typeof badges.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Page = typeof pages.$inferSelect;
+
+export const socialLinks = pgTable(
+	'social_links',
+	{
+		id: serial().primaryKey(),
+		userId: integer()
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		url: text().notNull(),
+		createdAt: createdAt()
+	},
+	(t) => [index('social_links_user_idx').on(t.userId)]
+);
+
+/** Company referral links shown on a profile. The URL is never sent to visitors until they copy it. */
+export const referrals = pgTable(
+	'referrals',
+	{
+		id: serial().primaryKey(),
+		userId: integer()
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		company: text().notNull(),
+		url: text().notNull(),
+		createdAt: createdAt()
+	},
+	(t) => [index('referrals_user_idx').on(t.userId)]
+);
+
+/** Unique visitors who copied a referral link. */
+export const referralCopies = pgTable(
+	'referral_copies',
+	{
+		referralId: integer()
+			.notNull()
+			.references(() => referrals.id, { onDelete: 'cascade' }),
+		userId: integer()
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		createdAt: createdAt()
+	},
+	(t) => [primaryKey({ columns: [t.referralId, t.userId] })]
+);
+
+/** Cities whose new alumni the user wants to hear about. */
+export const followedCities = pgTable(
+	'followed_cities',
+	{
+		id: serial().primaryKey(),
+		userId: integer()
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		name: text().notNull(),
+		lat: doublePrecision().notNull(),
+		lng: doublePrecision().notNull(),
+		/** `location` and `temporary` rows are maintained from the profile and kept by default. */
+		source: text({ enum: ['manual', 'location', 'temporary'] })
+			.notNull()
+			.default('manual'),
+		enabled: boolean().notNull().default(true),
+		createdAt: createdAt()
+	},
+	(t) => [
+		index('followed_cities_user_idx').on(t.userId),
+		uniqueIndex('followed_cities_user_city_idx').on(t.userId, t.lat, t.lng)
+	]
+);
+
+export const notifications = pgTable(
+	'notifications',
+	{
+		id: serial().primaryKey(),
+		userId: integer()
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		/** Public id of the alum who moved, so the notification can link to their profile. */
+		actorNanoId: text(),
+		kind: text({ enum: ['appeared', 'moved', 'temporary'] }).notNull(),
+		message: text().notNull(),
+		cityName: text().notNull(),
+		cityLat: doublePrecision().notNull(),
+		cityLng: doublePrecision().notNull(),
+		/** Name of the followed city when the alum is not exactly there */
+		nearCityName: text(),
+		readAt: timestamp({ withTimezone: true }),
+		createdAt: createdAt()
+	},
+	(t) => [index('notifications_user_idx').on(t.userId, t.createdAt)]
+);
+
+export type UserCode = typeof userCodes.$inferSelect;
+export type SocialLink = typeof socialLinks.$inferSelect;
+export type Referral = typeof referrals.$inferSelect;
+export type FollowedCity = typeof followedCities.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;

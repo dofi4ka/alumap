@@ -3,6 +3,7 @@
 	import { enhance } from '$app/forms';
 	import { goto } from '$app/navigation';
 	import AuthShell from '#lib/components/AuthShell.svelte';
+	import { getRawInitData } from '#lib/telegram/miniapp.ts';
 	import type { PageProps } from './$types';
 
 	let { form }: PageProps = $props();
@@ -10,8 +11,9 @@
 	let pending = $state(false);
 
 	onMount(async () => {
-		// Telegram passes miniapp launch params in the URL hash
-		const initData = new URLSearchParams(location.hash.slice(1)).get('tgWebAppData');
+		// @tma.js reads the launch params; the hash fallback helps older Telegram clients.
+		const fromSdk = await getRawInitData().catch(() => null);
+		const initData = fromSdk ?? new URLSearchParams(location.hash.slice(1)).get('tgWebAppData');
 		if (!initData) return;
 		telegramStatus = 'checking';
 		try {
@@ -49,11 +51,15 @@
 			};
 		}}
 	>
-		<input class="input" type="email" name="email" placeholder="Email" autocomplete="email" value={form?.email ?? ''} required />
+		<input class="input" type="email" name="email" placeholder="Main email" autocomplete="email" value={form?.email ?? ''} required />
 		<input class="input" type="password" name="password" placeholder="Password" autocomplete="current-password" required />
 		{#if form?.error}<p class="error-box">{form.error}</p>{/if}
 		<button class="btn-primary w-full" disabled={pending}>Log in</button>
 	</form>
+
+	<p class="mt-3 text-center text-sm">
+		<a href="/forgot-password" class="font-medium text-zinc-500 hover:text-zinc-800">Forgot password?</a>
+	</p>
 
 	<p class="mt-6 text-center text-sm text-zinc-500">
 		New here? <a href="/register" class="font-semibold text-brand-600 hover:underline">Create an account</a>

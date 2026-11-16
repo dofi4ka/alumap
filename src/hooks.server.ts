@@ -11,9 +11,19 @@ export const init: ServerInit = async () => {
 	startBot();
 };
 
-const publicPaths = ['/login', '/register', '/api/telegram-auth'];
+const publicPaths = ['/login', '/register', '/forgot-password', '/api/telegram-auth'];
+/** Second registration step, also used later from the account section */
+const alumniVerificationPath = '/register/alumni';
 /** Paths available to registered, but not yet approved users */
-const unapprovedPaths = ['/logout', '/profile', '/api/cities', '/uploads/', '/banned'];
+const unapprovedPaths = [
+	'/logout',
+	'/profile',
+	'/notifications',
+	'/api/cities',
+	'/uploads/',
+	'/banned',
+	alumniVerificationPath
+];
 
 const startsWithAny = (path: string, prefixes: string[]) =>
 	prefixes.some((p) => path === p || path.startsWith(p.endsWith('/') ? p : p + '/'));
@@ -23,7 +33,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = user;
 	const path = event.url.pathname;
 
-	if (startsWithAny(path, publicPaths)) {
+	const alumniVerification = startsWithAny(path, [alumniVerificationPath]);
+	if (!alumniVerification && startsWithAny(path, publicPaths)) {
 		if (user && path !== '/api/telegram-auth') redirect(303, '/');
 		return resolve(event);
 	}

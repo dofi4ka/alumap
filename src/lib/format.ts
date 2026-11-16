@@ -51,3 +51,7 @@ export const employmentTypes = {
 	freelance: 'Freelance',
 	'self-employed': 'Self-employed'
 } as const;
+
+/** "12 Dec 2026" for expiry dates shown in the profile. */
+export const formatDay = (date: Date | string) =>
+	new Date(date).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' });
