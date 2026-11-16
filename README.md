@@ -35,10 +35,16 @@ docker compose exec alumap node scripts/set-admin.js you@innopolis.university
 
 ## Migrating from alumap-htmx
 
-The old database is still SQLite, so the import script reads it with Node's built-in `node:sqlite`:
+The old database is still SQLite, so the import script reads it with Node's built-in `node:sqlite`.
+Run it against an empty PostgreSQL database:
 
 ```sh
-node scripts/import-htmx.js ../alumap-htmx/db.sqlite
+DATABASE_URL=postgres://... node scripts/import-sqlite-full.js ../alumap-htmx/db.sqlite
 ```
+
+It imports users, experiences, skills, events, projects, badges, sessions, pending
+registrations, social links and default followed cities, preserves integer ids, and
+sets the sequences afterwards. Uploaded images must be copied from the old `data/uploads`
+directory into `DATA_DIR/uploads` separately.
 
 Password hashes are compatible (bcrypt, cost 12, 72-byte truncation), so old passwords keep working.
