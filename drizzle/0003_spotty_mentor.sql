@@ -1,0 +1,1 @@
+ALTER TABLE "referrals" ADD COLUMN "kind" text DEFAULT 'link' NOT NULL;

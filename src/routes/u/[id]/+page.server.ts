@@ -29,7 +29,7 @@ import {
 	updateHomeLocation
 } from '#lib/server/locations.ts';
 import { isValidGraduationYear, iuStatus, maxGraduationYear } from '#lib/iu-status.ts';
-import { normalizeUrl } from '#lib/socials.ts';
+import { faviconUrl, normalizeUrl } from '#lib/socials.ts';
 import { createLinkToken, getBotUsername } from '#lib/server/telegram.ts';
 import {
 	deleteUserCode,
@@ -93,7 +93,12 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		db.select({ name: skills.name }).from(skills).where(eq(skills.userId, u.id)).orderBy(asc(skills.name)),
 		db.select({ url: socialLinks.url }).from(socialLinks).where(eq(socialLinks.userId, u.id)).orderBy(asc(socialLinks.id)),
 		db
-			.select({ id: referrals.id, company: referrals.company, url: referrals.url })
+			.select({
+				id: referrals.id,
+				company: referrals.company,
+				kind: referrals.kind,
+				url: referrals.url
+			})
 			.from(referrals)
 			.where(eq(referrals.userId, u.id))
 			.orderBy(asc(referrals.id)),
@@ -139,8 +144,11 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			referrals: referralRows.map((r) => ({
 				id: r.id,
 				company: r.company,
+				kind: r.kind,
 				// The link is revealed only by the Copy action, never in the page data.
 				url: isSelf ? r.url : null,
+				// Only the host is exposed, so a private referral path stays hidden.
+				favicon: faviconUrl(r.url),
 				copies: copiesByReferral.get(r.id) ?? 0
 			})),
 			status: iuStatus(u),
@@ -359,17 +367,18 @@ export const actions: Actions = {
 		const fd = await event.request.formData();
 		const id = int(fd, 'id');
 		const company = str(fd, 'company', 80);
+		const kind = oneOf(fd, 'kind', ['link', 'manual'] as const) ?? 'link';
 		const url = referralUrl(str(fd, 'url', 500));
 		if (!company || !url) return fail(400, { error: 'Enter a company and a valid http(s) link' });
 		if (id) {
 			await db
 				.update(referrals)
-				.set({ company, url })
+				.set({ company, kind, url })
 				.where(and(eq(referrals.id, id), eq(referrals.userId, target.id)));
 		} else {
 			const count = await db.$count(referrals, eq(referrals.userId, target.id));
 			if (count >= 10) return fail(400, { error: 'You can add up to 10 referrals' });
-			await db.insert(referrals).values({ userId: target.id, company, url });
+			await db.insert(referrals).values({ userId: target.id, company, kind, url });
 		}
 	},
 
@@ -387,6 +396,8 @@ export const actions: Actions = {
 		if (!id) return fail(400, { error: 'Missing referral' });
 		const referral = (await db.select().from(referrals).where(eq(referrals.id, id)))[0];
 		if (!referral) return fail(404, { error: 'This referral no longer exists' });
+		if (referral.kind !== 'link')
+			return fail(400, { error: 'This referral is contacted directly, not copied' });
 		// the owner copying their own link should not inflate the unique-copy count
 		if (referral.userId !== event.locals.user!.id)
 			await db

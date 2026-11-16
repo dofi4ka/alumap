@@ -284,7 +284,7 @@ export const socialLinks = pgTable(
 	(t) => [index('social_links_user_idx').on(t.userId)]
 );
 
-/** Company referral links shown on a profile. The URL is never sent to visitors until they copy it. */
+/** Company referrals shown on a profile. A referral link is only sent to visitors when they copy it. */
 export const referrals = pgTable(
 	'referrals',
 	{
@@ -293,6 +293,11 @@ export const referrals = pgTable(
 			.notNull()
 			.references(() => users.id, { onDelete: 'cascade' }),
 		company: text().notNull(),
+		/** `link` referrals are copied from a hidden URL, `manual` ones open a Telegram DM with the alum. */
+		kind: text({ enum: ['link', 'manual'] })
+			.notNull()
+			.default('link'),
+		/** The referral URL for `link`, the company site for `manual` (used for its favicon). */
 		url: text().notNull(),
 		createdAt: createdAt()
 	},

@@ -134,6 +134,17 @@ export const platformFor = (url: string): SocialPlatform => {
 	);
 };
 
+/**
+ * Favicon service URL for a link. Only the host is sent, so private referral paths stay hidden.
+ * Rendered client-side: the visitor's browser asks the service for the icon.
+ */
+export const faviconUrl = (url: string, size = 64) => {
+	const host = hostOf(url);
+	return host
+		? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=${size}`
+		: null;
+};
+
 /** A short human-readable label for a link, used as the icon's tooltip. */
 export const socialLabel = (url: string) => {
 	const platform = platformFor(url);

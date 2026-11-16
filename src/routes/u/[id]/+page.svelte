@@ -27,6 +27,7 @@
 	import FormActions from '#lib/components/FormActions.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import ReferralForm from '#lib/components/ReferralForm.svelte';
+	import ReferralIcon from '#lib/components/ReferralIcon.svelte';
 	import Section from '#lib/components/Section.svelte';
 	import SocialIcon from '#lib/components/SocialIcon.svelte';
 	import TemporaryLocationForm from '#lib/components/TemporaryLocationForm.svelte';
@@ -246,27 +247,37 @@
 			<ul class="divide-y divide-zinc-100">
 				{#each p.referrals as r (r.id)}
 					<li class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-						<div class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-sm font-bold text-zinc-500">
-							{r.company.slice(0, 2).toUpperCase()}
-						</div>
+						<ReferralIcon company={r.company} favicon={r.favicon} />
 						<div class="min-w-0 flex-1">
 							<div class="truncate font-semibold">{r.company}</div>
-							{#if data.canEdit}
+							{#if data.canEdit && r.kind === 'link'}
 								<div class="text-xs text-zinc-500">
 									{r.copies} {r.copies === 1 ? 'person copied' : 'people copied'}
 								</div>
 							{/if}
 						</div>
-						<form method="POST" action="?/copyReferral" use:enhance={copyReferral(r.id)}>
-							<input type="hidden" name="id" value={r.id} />
-							<button class="btn-secondary py-2" title="Copy the referral link">
-								{#if copiedId === r.id}
-									<Check size={16} />Copied
-								{:else}
-									<Copy size={16} />Copy
-								{/if}
-							</button>
-						</form>
+						{#if r.kind === 'link'}
+							<form method="POST" action="?/copyReferral" use:enhance={copyReferral(r.id)}>
+								<input type="hidden" name="id" value={r.id} />
+								<button class="btn-secondary py-2" title="Copy the referral link">
+									{#if copiedId === r.id}
+										<Check size={16} />Copied
+									{:else}
+										<Copy size={16} />Copy
+									{/if}
+								</button>
+							</form>
+						{:else if p.telegramUsername}
+							<a
+								class="btn-secondary py-2"
+								href="https://t.me/{p.telegramUsername}"
+								target="_blank"
+								rel="noopener"
+								title="Message {p.firstName} on Telegram"
+							>
+								<Send size={16} />DM me
+							</a>
+						{/if}
 						{#if data.canEdit}
 							<div class="flex shrink-0 flex-col">
 								<button
