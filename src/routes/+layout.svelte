@@ -142,7 +142,9 @@
 		class="mx-auto px-4 pb-[calc(7rem+var(--tg-inset-bottom))] md:pb-12 {isAdmin
 			? 'max-w-5xl'
 			: 'max-w-3xl'} {me ? 'pt-20' : 'pt-10'}"
-		style={me ? 'padding-top: calc(var(--app-header-height) + 1.25rem);' : 'padding-top: 2.5rem;'}
+		style={me
+			? 'padding-top: calc(var(--app-header-height) + 1.25rem);'
+			: 'padding-top: calc(var(--tg-inset-top) + 2.5rem);'}
 	>
 		{@render children()}
 	</main>

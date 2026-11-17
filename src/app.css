@@ -18,15 +18,16 @@
 
 @layer base {
 	:root {
-		/* Telegram Mini App viewport variables are bound by @tma.js/sdk; everything falls back to 0. */
-		--tg-inset-top: max(
-			env(safe-area-inset-top, 0px),
-			var(--tg-viewport-safe-area-inset-top, 0px),
-			var(--tg-viewport-content-safe-area-inset-top, 0px)
+		/* Device and Telegram UI insets stack. env() and the SDK device inset describe
+		   the same area, so only those two use max() to avoid counting it twice.
+		   SDK-bound variables update automatically when Telegram's safe areas change. */
+		--tg-controls-inset-top: var(--tg-viewport-content-safe-area-inset-top, 0px);
+		--tg-inset-top: calc(
+			max(env(safe-area-inset-top, 0px), var(--tg-viewport-safe-area-inset-top, 0px)) +
+			var(--tg-controls-inset-top)
 		);
-		--tg-inset-bottom: max(
-			env(safe-area-inset-bottom, 0px),
-			var(--tg-viewport-safe-area-inset-bottom, 0px),
+		--tg-inset-bottom: calc(
+			max(env(safe-area-inset-bottom, 0px), var(--tg-viewport-safe-area-inset-bottom, 0px)) +
 			var(--tg-viewport-content-safe-area-inset-bottom, 0px)
 		);
 		--app-header-height: calc(3.5rem + var(--tg-inset-top));
@@ -170,20 +171,8 @@
 	font-style: normal;
 }
 
-/* Telegram already draws its own header controls over the webview; keep our header below them. */
-html[data-tma] {
-	--tg-inset-top: max(
-		0.75rem,
-		env(safe-area-inset-top, 0px),
-		var(--tg-viewport-safe-area-inset-top, 0px),
-		var(--tg-viewport-content-safe-area-inset-top, 0px)
-	);
-}
+/* Reserve the control row while fullscreen clients are still reporting zero insets.
+   This is in addition to the device/status-bar inset, not a minimum for the total. */
 html[data-tma-fullscreen] {
-	--tg-inset-top: max(
-		3rem,
-		env(safe-area-inset-top, 0px),
-		var(--tg-viewport-safe-area-inset-top, 0px),
-		var(--tg-viewport-content-safe-area-inset-top, 0px)
-	);
+	--tg-controls-inset-top: max(3rem, var(--tg-viewport-content-safe-area-inset-top, 0px));
 }
